@@ -1,0 +1,10 @@
+# Secrets & local-only artefacts — never upload these to Vercel.
+# (Runtime env vars are configured in the Vercel project, not via .env.)
+.env
+.env.*
+.image-cache
+node_modules
+.next
+*.log
+*.tsbuildinfo
+scripts/backfill-models.cjs

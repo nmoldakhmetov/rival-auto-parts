@@ -1,0 +1,85 @@
+import { NextRequest, NextResponse } from "next/server";
+import { Prisma, OrderStatus } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
+
+const STATUSES = new Set<string>([
+  "NEW",
+  "SENT",
+  "PROCESSING",
+  "OUT_OF_STOCK",
+  "ISSUED",
+  "COMPLETED",
+  "CANCELLED",
+]);
+
+export async function GET(req: NextRequest) {
+  const sp = req.nextUrl.searchParams;
+  const status = (sp.get("status") ?? "").trim();
+  const q = (sp.get("q") ?? "").trim();
+  const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
+  const PAGE_SIZE = 30;
+
+  const and: Prisma.OrderWhereInput[] = [];
+  if (STATUSES.has(status)) and.push({ status: status as OrderStatus });
+  if (q) {
+    and.push({
+      user: {
+        is: {
+          OR: [
+            { fullName: { contains: q, mode: "insensitive" } },
+            { login: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+          ],
+        },
+      },
+    });
+  }
+  const where: Prisma.OrderWhereInput = and.length ? { AND: and } : {};
+
+  const [total, orders, agg] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      include: {
+        user: { select: { fullName: true, email: true, login: true } },
+        _count: { select: { items: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+    prisma.order.aggregate({ where, _sum: { total: true, paid: true } }),
+  ]);
+
+  const rows = orders.map((o) => {
+    const totalNum = Number(o.total);
+    const paidNum = Number(o.paid);
+    return {
+      id: o.id,
+      orderNo: o.id.slice(-6).toUpperCase(),
+      createdAt: o.createdAt,
+      status: o.status,
+      total: totalNum,
+      paid: paidNum,
+      debt: totalNum - paidNum,
+      itemsCount: o._count.items,
+      client: o.user
+        ? { fullName: o.user.fullName, email: o.user.email, login: o.user.login }
+        : null,
+    };
+  });
+
+  const sumTotal = Number(agg._sum.total ?? 0);
+  const sumPaid = Number(agg._sum.paid ?? 0);
+
+  return NextResponse.json({
+    rows,
+    total,
+    page,
+    pageSize: PAGE_SIZE,
+    totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    sums: { total: sumTotal, paid: sumPaid, debt: sumTotal - sumPaid },
+  });
+}
