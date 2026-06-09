@@ -1,0 +1,84 @@
+import "server-only";
+
+// Pushes a placed order to the 1С HTTP-service (template "/orders").
+// Matches the 1С handler which reads client_name / client_phone /
+// site_order_id / comment / products[{code, sku, qty, price}].
+
+export type OneCOrderPayload = {
+  site_order_id: string;
+  client_name: string;
+  client_phone: string;
+  comment: string;
+  products: {
+    code: string | null;
+    sku: string;
+    qty: number;
+    price: number;
+  }[];
+};
+
+export type OneCOrderResult = {
+  ok: boolean;
+  orderNumber?: string;
+  error?: string;
+};
+
+function ordersUrl(): string | null {
+  if (process.env.ONEC_ORDERS_URL) return process.env.ONEC_ORDERS_URL;
+  // Derive from the products feed: …/hs/v1/products → …/hs/v1/orders
+  const base = process.env.ONEC_API_URL;
+  if (!base) return null;
+  try {
+    const u = new URL(base);
+    u.pathname = u.pathname.replace(/[^/]*$/, "orders");
+    u.search = "";
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+export async function sendOrderToOneC(
+  payload: OneCOrderPayload
+): Promise<OneCOrderResult> {
+  const url = ordersUrl();
+  if (!url) return { ok: false, error: "ONEC_ORDERS_URL не настроен" };
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+  const user = process.env.ONEC_API_USER;
+  if (user) {
+    const pass = process.env.ONEC_API_PASSWORD ?? "";
+    headers.Authorization =
+      "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return { ok: false, error: `1С ответил ${res.status} ${res.statusText}` };
+    }
+    const data = (await res.json().catch(() => ({}))) as {
+      order_number?: unknown;
+    };
+    return {
+      ok: true,
+      orderNumber:
+        data?.order_number != null ? String(data.order_number) : undefined,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
