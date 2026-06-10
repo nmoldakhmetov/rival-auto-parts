@@ -127,7 +127,59 @@ function CartQtySelector({
   );
 }
 
+// Shimmering placeholders shown on the very first load (no rows yet).
+function SkeletonGrid({ count = 8 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="overflow-hidden rounded-xl border border-line bg-white shadow-sm"
+        >
+          <div className="skeleton h-44 w-full !rounded-none" />
+          <div className="space-y-2 p-4">
+            <div className="skeleton h-4 w-2/5" />
+            <div className="skeleton h-3 w-full" />
+            <div className="skeleton h-3 w-3/4" />
+            <div className="skeleton mt-3 h-6 w-1/3" />
+            <div className="skeleton h-9 w-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkeletonList({ count = 10 }: { count?: number }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-line bg-white">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 border-b border-line/70 px-3 py-2.5 last:border-0"
+        >
+          <div className="skeleton h-11 w-11 shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <div className="skeleton h-3.5 w-1/3" />
+            <div className="skeleton h-3 w-2/3" />
+          </div>
+          <div className="skeleton h-4 w-16" />
+          <div className="skeleton h-8 w-20" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type ViewMode = "list" | "grid";
+
+type SearchResp = {
+  rows?: CatalogRow[];
+  total?: number;
+  shown?: number;
+  totalPages?: number;
+  pageSize?: number;
+};
 
 // Builds a windowed list of page numbers; -1 marks an ellipsis gap.
 function buildPageList(current: number, total: number): number[] {
@@ -278,6 +330,10 @@ export default function Catalog({
   const [shown, setShown] = useState(0);
   const [loading, setLoading] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+  // Session-scoped cache of search responses (stale-while-revalidate +
+  // next-page prefetch) — pagination and back-navigation feel instant.
+  const resultsCacheRef = useRef<Map<string, SearchResp>>(new Map());
+  const prevQueryRef = useRef(query);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const cartItems = useCart((s) => s.items);
@@ -365,14 +421,14 @@ export default function Catalog({
     }).catch(() => {});
   }
 
-  // Debounced search whenever query, a filter, or the page changes.
+  // Search whenever query, a filter, or the page changes.
+  // Smoothness recipe: previous rows stay on screen while new ones load
+  // (no blanking), responses are cached per param-set and re-applied
+  // instantly (then silently revalidated), the next page is prefetched so
+  // pagination feels immediate, and only typing is debounced — filter
+  // clicks and page switches fire at once.
   useEffect(() => {
-    const t = setTimeout(() => {
-      abortRef.current?.abort();
-      const ac = new AbortController();
-      abortRef.current = ac;
-      setLoading(true);
-
+    const buildParams = (p: number) => {
       const params = new URLSearchParams();
       if (query) params.set("q", query);
       if (make) params.set("make", make);
@@ -382,19 +438,63 @@ export default function Catalog({
       if (minPrice) params.set("minPrice", minPrice);
       if (maxPrice) params.set("maxPrice", maxPrice);
       if (inStock) params.set("inStock", "1");
-      params.set("page", String(page));
+      params.set("page", String(p));
+      return params.toString();
+    };
+    const cache = resultsCacheRef.current;
+    const cacheSet = (k: string, v: SearchResp) => {
+      cache.delete(k);
+      cache.set(k, v);
+      while (cache.size > 40) {
+        const oldest = cache.keys().next().value;
+        if (oldest === undefined) break;
+        cache.delete(oldest);
+      }
+    };
+    const apply = (d: SearchResp) => {
+      setRows(d.rows ?? []);
+      setTotal(d.total ?? 0);
+      setShown(d.shown ?? d.rows?.length ?? 0);
+      setTotalPages(d.totalPages ?? 1);
+      if (d.pageSize) setPageSize(d.pageSize);
+    };
 
-      fetch(`/api/products/search?${params.toString()}`, { signal: ac.signal })
+    const delay = query !== prevQueryRef.current ? 300 : 0;
+    prevQueryRef.current = query;
+
+    const key = buildParams(page);
+    const hit = cache.get(key);
+    if (hit) {
+      // Instant paint from cache; the fetch below revalidates silently.
+      apply(hit);
+      setLoading(false);
+    }
+
+    const t = setTimeout(() => {
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+      if (!hit) setLoading(true);
+
+      fetch(`/api/products/search?${key}`, { signal: ac.signal })
         .then((r) => r.json())
-        .then((d) => {
-          setRows(d.rows ?? []);
-          setTotal(d.total ?? 0);
-          setShown(d.shown ?? (d.rows?.length ?? 0));
-          setTotalPages(d.totalPages ?? 1);
-          if (d.pageSize) setPageSize(d.pageSize);
+        .then((d: SearchResp) => {
+          cacheSet(key, d);
+          apply(d);
+          // Warm the next page in the background for instant pagination.
+          const tp = d.totalPages ?? 1;
+          if (page < tp) {
+            const nextKey = buildParams(page + 1);
+            if (!cache.has(nextKey)) {
+              fetch(`/api/products/search?${nextKey}`, { signal: ac.signal })
+                .then((r) => r.json())
+                .then((nd: SearchResp) => cacheSet(nextKey, nd))
+                .catch(() => {});
+            }
+          }
         })
         .catch((e) => {
-          if (e.name !== "AbortError") {
+          if (e.name !== "AbortError" && !hit) {
             setRows([]);
             setTotal(0);
             setShown(0);
@@ -402,7 +502,7 @@ export default function Catalog({
           }
         })
         .finally(() => setLoading(false));
-    }, 250);
+    }, delay);
     return () => clearTimeout(t);
   }, [query, make, model, category, categoryGroup, minPrice, maxPrice, inStock, page]);
 
@@ -429,7 +529,7 @@ export default function Catalog({
 
   function goToPage(p: number) {
     setPage(Math.min(Math.max(1, p), totalPages));
-    scrollRef.current?.scrollTo({ top: 0 });
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const pageList = buildPageList(page, totalPages);
@@ -677,9 +777,24 @@ export default function Catalog({
         </aside>
 
         {/* Table / grid + pagination */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} className="flex-1 overflow-auto p-4">
-            {empty ? (
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Refreshing existing results: thin bar + slight dim, no blanking */}
+          {loading && rows.length > 0 && <div className="loading-bar" />}
+          <div
+            ref={scrollRef}
+            className={cx(
+              "flex-1 overflow-auto p-4",
+              loading && rows.length > 0 && "stale-fade"
+            )}
+          >
+            {loading && rows.length === 0 ? (
+              /* First load → shimmering skeletons instead of a spinner */
+              view === "grid" ? (
+                <SkeletonGrid />
+              ) : (
+                <SkeletonList />
+              )
+            ) : empty ? (
               <div className="rounded-lg border border-line bg-white py-16 text-center">
                 <PackageSearch size={32} className="mx-auto mb-2 text-gray-300" />
                 <div className="text-sm font-medium text-ink">
@@ -896,7 +1011,7 @@ export default function Catalog({
             ) : (
               /* ─── Grid (cards) view ─────────────────────────────── */
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-                {rows.map((row) => {
+                {rows.map((row, i) => {
                   const qtyInCart = cartQtyById.get(row.id) ?? 0;
                   const inCart = qtyInCart > 0;
                   const pct = row.discountPct;
@@ -906,7 +1021,8 @@ export default function Catalog({
                   return (
                     <div
                       key={row.id}
-                      className="group relative flex flex-col rounded-xl border border-line bg-white shadow-sm transition-all duration-200 hover:z-10 hover:shadow-lg"
+                      style={{ animationDelay: `${Math.min(i, 11) * 25}ms` }}
+                      className="animate-fade-in-up group relative flex flex-col rounded-xl border border-line bg-white shadow-sm transition-all duration-200 hover:z-10 hover:shadow-lg"
                     >
                       <div className="relative flex h-44 items-center justify-center overflow-hidden rounded-t-xl border-b border-line bg-gray-50 p-3">
                         <ProductImage

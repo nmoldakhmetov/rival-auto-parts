@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { invalidatePrefix } from "@/lib/cache";
 
 // PUT: replace the full set of warehouses a client may see stock for.
 export async function PUT(
@@ -24,6 +25,9 @@ export async function PUT(
       skipDuplicates: true,
     }),
   ]);
+
+  // The search route caches warehouse access per user for 30 s.
+  invalidatePrefix(`wh:${params.id}`);
 
   return NextResponse.json({ ok: true, count: ids.length });
 }

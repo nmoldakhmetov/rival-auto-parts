@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, setSetting, DEFAULTS } from "@/lib/settings";
 import { applySyncSchedule } from "@/lib/scheduler";
+import { invalidatePrefix } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -17,17 +18,23 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
   }
   let syncChanged = false;
+  let discountChanged = false;
   if (body.settings && typeof body.settings === "object") {
     for (const [k, v] of Object.entries(body.settings)) {
       if (k in DEFAULTS) {
         await setSetting(k, String(v ?? ""));
         if (k === "sync_cron") syncChanged = true;
+        if (k === "global_discount") discountChanged = true;
       }
     }
   } else if (body.key && body.key in DEFAULTS) {
     await setSetting(body.key, String(body.value ?? ""));
     if (body.key === "sync_cron") syncChanged = true;
+    if (body.key === "global_discount") discountChanged = true;
   }
+
+  // Discount contexts are cached per user for 30 s in the search route.
+  if (discountChanged) invalidatePrefix("disc:");
 
   // Re-arm the in-process auto-sync scheduler with the new interval.
   let schedule = null;

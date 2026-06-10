@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { invalidatePrefix } from "@/lib/cache";
 
 // PATCH: update a client — manager, active state, balance, city, comment.
 export async function PATCH(
@@ -35,6 +36,8 @@ export async function PATCH(
       0,
       Math.min(95, Math.trunc(Number(body.discountPercent) || 0))
     );
+    // The search route caches the per-user discount context for 30 s.
+    invalidatePrefix(`disc:${params.id}`);
   }
 
   if (Object.keys(data).length === 0) {
