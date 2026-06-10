@@ -6,6 +6,7 @@ import type { CatalogRow } from "@/lib/types";
 import { findAnalogMatches, normalizeSmart } from "@/lib/analogs";
 import { getDiscountContext, priceFor } from "@/lib/pricing";
 import { NOT_HIDDEN_CATEGORY } from "@/lib/categories";
+import { cached } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -28,17 +29,23 @@ export async function GET(req: NextRequest) {
   const PAGE_SIZE = 50;
 
   // Stock visibility: CLIENT sees only granted warehouses; staff see all.
+  // Both lookups are cached for 30 s — they rarely change but used to cost
+  // 4-5 DB round-trips on every keystroke.
   let allowedWhIds: string[] | null = null;
   if (session.role === "CLIENT") {
-    const access = await prisma.clientWarehouseAccess.findMany({
-      where: { userId: session.sub },
-      select: { warehouseId: true },
+    allowedWhIds = await cached(`wh:${session.sub}`, 30_000, async () => {
+      const access = await prisma.clientWarehouseAccess.findMany({
+        where: { userId: session.sub },
+        select: { warehouseId: true },
+      });
+      return access.map((a) => a.warehouseId);
     });
-    allowedWhIds = access.map((a) => a.warehouseId);
   }
 
   // Effective client discount context (rules + personal + global). Staff get none.
-  const disc = await getDiscountContext(session.sub, session.role);
+  const disc = await cached(`disc:${session.sub}`, 30_000, () =>
+    getDiscountContext(session.sub, session.role)
+  );
 
   // Analog cross-reference: a typed code may resolve to one or more catalog skus.
   const analogMatches = q ? await findAnalogMatches(q) : [];

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { cached } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -14,17 +15,19 @@ export async function GET(req: NextRequest) {
   const make = (req.nextUrl.searchParams.get("make") ?? "").trim();
   if (!make) return NextResponse.json({ models: [] });
 
-  const grouped = await prisma.product.groupBy({
-    by: ["model"],
-    where: { brand: make, model: { not: null } },
-    _count: { _all: true },
+  // Model lists only change on a 1С sync → cache per make (sync invalidates).
+  const models = await cached(`catalog:models:${make}`, 300_000, async () => {
+    const grouped = await prisma.product.groupBy({
+      by: ["model"],
+      where: { brand: make, model: { not: null } },
+      _count: { _all: true },
+    });
+    return grouped
+      .filter((g) => g.model)
+      .map((g) => ({ name: g.model as string, count: g._count._all }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ru"))
+      .slice(0, 80);
   });
-
-  const models = grouped
-    .filter((g) => g.model)
-    .map((g) => ({ name: g.model as string, count: g._count._all }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ru"))
-    .slice(0, 80);
 
   return NextResponse.json({ models });
 }

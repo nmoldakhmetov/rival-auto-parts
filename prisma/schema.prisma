@@ -129,6 +129,14 @@ model Product {
   @@index([skuNorm])
   @@index([fullNameNorm])
   @@index([brand, model])
+  // Trigram GIN indexes: the catalog search is built on `contains` (LIKE %q%),
+  // which B-tree indexes can't serve. Requires the pg_trgm extension (created
+  // in the same migration).
+  @@index([sku(ops: raw("gin_trgm_ops"))], map: "Product_sku_trgm", type: Gin)
+  @@index([name(ops: raw("gin_trgm_ops"))], map: "Product_name_trgm", type: Gin)
+  @@index([fullName(ops: raw("gin_trgm_ops"))], map: "Product_fullName_trgm", type: Gin)
+  @@index([skuNorm(ops: raw("gin_trgm_ops"))], map: "Product_skuNorm_trgm", type: Gin)
+  @@index([fullNameNorm(ops: raw("gin_trgm_ops"))], map: "Product_fullNameNorm_trgm", type: Gin)
 }
 
 model Warehouse {

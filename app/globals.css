@@ -56,3 +56,73 @@ body {
     @apply inline-flex items-center rounded px-2 py-0.5 text-[11px] font-semibold;
   }
 }
+
+/* ── Motion & loading polish ─────────────────────────────────────────── */
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.28s ease-out backwards;
+}
+
+/* Shimmering placeholder block */
+.skeleton {
+  background: linear-gradient(90deg, #eceef1 25%, #f6f7f8 50%, #eceef1 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* Thin indeterminate progress bar (shown while results refresh) */
+.loading-bar {
+  @apply pointer-events-none absolute inset-x-0 top-0 z-20 h-0.5 overflow-hidden;
+}
+.loading-bar::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: #e53935;
+  animation: loading-bar 1s ease-in-out infinite;
+}
+
+/* Content that is being refreshed dims slightly instead of disappearing */
+.stale-fade {
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .skeleton,
+  .loading-bar::after {
+    animation: none !important;
+  }
+}

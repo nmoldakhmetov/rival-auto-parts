@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeRule } from "@/lib/discount-rules";
+import { invalidatePrefix } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export async function PATCH(
         where: { id: params.id },
         data: { active: body.active as boolean },
       });
+      invalidatePrefix("disc:");
       return NextResponse.json({ ok: true });
     }
 
@@ -52,6 +54,7 @@ export async function PATCH(
         },
       },
     });
+    invalidatePrefix("disc:");
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "Скидка не найдена" }, { status: 404 });
@@ -67,5 +70,6 @@ export async function DELETE(
   } catch {
     return NextResponse.json({ error: "Скидка не найдена" }, { status: 404 });
   }
+  invalidatePrefix("disc:");
   return NextResponse.json({ ok: true });
 }

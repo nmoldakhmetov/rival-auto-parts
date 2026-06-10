@@ -1,4 +1,5 @@
 import { syncFromOneC, type SyncResult } from "./onec";
+import { invalidatePrefix } from "./cache";
 
 // Shared runner + in-memory state so manual (/api/sync) and scheduled
 // (instrumentation cron) syncs coordinate and never overlap. State lives on
@@ -44,6 +45,8 @@ export async function runSync(trigger: SyncTrigger): Promise<SyncResult> {
     const result = await syncFromOneC();
     state.lastResult = result;
     state.lastRunAt = new Date().toISOString();
+    // Catalog facets (filters/models) are cached — refresh them after a sync.
+    if (result.ok) invalidatePrefix("catalog:");
     return result;
   } finally {
     state.running = false;

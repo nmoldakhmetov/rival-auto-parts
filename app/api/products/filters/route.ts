@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { HIDDEN_CATEGORIES, NOT_HIDDEN_CATEGORY } from "@/lib/categories";
+import { cached } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -38,34 +39,39 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [makes, catCounts, agg] = await Promise.all([
-    prisma.product.findMany({
-      where: { brand: { not: null }, ...NOT_HIDDEN_CATEGORY },
-      distinct: ["brand"],
-      select: { brand: true },
-      orderBy: { brand: "asc" },
-    }),
-    prisma.product.groupBy({
-      by: ["category"],
-      where: { category: { not: null } },
-      _count: { _all: true },
-    }),
-    prisma.product.aggregate({
-      where: NOT_HIDDEN_CATEGORY,
-      _min: { price: true },
-      _max: { price: true },
-    }),
-  ]);
+  // Facets only change on a 1С sync → cache 120 s (sync also invalidates).
+  const payload = await cached("catalog:filters", 120_000, async () => {
+    const [makes, catCounts, agg] = await Promise.all([
+      prisma.product.findMany({
+        where: { brand: { not: null }, ...NOT_HIDDEN_CATEGORY },
+        distinct: ["brand"],
+        select: { brand: true },
+        orderBy: { brand: "asc" },
+      }),
+      prisma.product.groupBy({
+        by: ["category"],
+        where: { category: { not: null } },
+        _count: { _all: true },
+      }),
+      prisma.product.aggregate({
+        where: NOT_HIDDEN_CATEGORY,
+        _min: { price: true },
+        _max: { price: true },
+      }),
+    ]);
 
-  const catRows: CatLeaf[] = catCounts
-    .filter((c) => c.category && !HIDDEN_CATEGORIES.has(c.category))
-    .map((c) => ({ name: c.category as string, count: c._count._all }));
+    const catRows: CatLeaf[] = catCounts
+      .filter((c) => c.category && !HIDDEN_CATEGORIES.has(c.category))
+      .map((c) => ({ name: c.category as string, count: c._count._all }));
 
-  return NextResponse.json({
-    makes: makes.map((m) => m.brand).filter(Boolean),
-    categories: catRows.map((c) => c.name),
-    categoryTree: buildCategoryTree(catRows),
-    priceMin: Math.floor(Number(agg._min.price ?? 0)),
-    priceMax: Math.ceil(Number(agg._max.price ?? 0)),
+    return {
+      makes: makes.map((m) => m.brand).filter(Boolean),
+      categories: catRows.map((c) => c.name),
+      categoryTree: buildCategoryTree(catRows),
+      priceMin: Math.floor(Number(agg._min.price ?? 0)),
+      priceMax: Math.ceil(Number(agg._max.price ?? 0)),
+    };
   });
+
+  return NextResponse.json(payload);
 }

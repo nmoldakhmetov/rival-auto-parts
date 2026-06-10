@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizeRule, type RuleBody } from "@/lib/discount-rules";
+import { invalidatePrefix } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest) {
         products: { create: productIds.map((productId) => ({ productId })) },
       },
     });
+    invalidatePrefix("disc:"); // cached discount contexts are now stale
     return NextResponse.json({ ok: true, id: rule.id });
   } catch (e) {
     if (
