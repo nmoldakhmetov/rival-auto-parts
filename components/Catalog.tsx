@@ -22,12 +22,12 @@ import {
   Pin,
   Star,
   Flame,
-  Minus,
 } from "lucide-react";
 import { useCart } from "@/store/cart";
 import { useSearch } from "@/store/search";
 import { formatTenge, formatNum } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
+import CartQtySelector from "@/components/CartQtySelector";
 import type { CatalogRow } from "@/lib/types";
 import type { Role } from "@/lib/jwt";
 import CategoryTree, { type CatNode } from "@/components/CategoryTree";
@@ -60,70 +60,6 @@ function BadgeLabel({ badge }: { badge: "NEW" | "HIT" }) {
       </span>
       {cfg.label}
     </span>
-  );
-}
-
-// Quantity selector shown once a product is in the cart. The number is a real
-// editable field, so a wholesale buyer can type e.g. 200 right in the catalog
-// instead of tapping + hundreds of times. − at 1 removes the item.
-function CartQtySelector({
-  qty,
-  onSet,
-  onRemove,
-}: {
-  qty: number;
-  onSet: (n: number) => void;
-  onRemove: () => void;
-}) {
-  const [draft, setDraft] = useState(String(qty));
-  // Reflect external changes (±, edits elsewhere) back into the field.
-  useEffect(() => {
-    setDraft(String(qty));
-  }, [qty]);
-
-  function change(raw: string) {
-    const digits = raw.replace(/\D/g, "").slice(0, 6);
-    setDraft(digits);
-    const n = parseInt(digits, 10);
-    if (Number.isFinite(n) && n >= 1) onSet(Math.min(n, 100000));
-  }
-  // On blur, an empty / zero field snaps back to the current quantity
-  // (removal is the minus button's job, never an accidental empty input).
-  function normalize() {
-    const n = parseInt(draft, 10);
-    if (!Number.isFinite(n) || n < 1) setDraft(String(qty));
-  }
-
-  return (
-    <div className="flex h-9 w-full items-center justify-between rounded-md bg-gray-100">
-      <button
-        onClick={() => (qty <= 1 ? onRemove() : onSet(qty - 1))}
-        title={qty > 1 ? "Уменьшить" : "Убрать из корзины"}
-        className="flex h-full w-10 shrink-0 items-center justify-center rounded-l-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink"
-      >
-        <Minus size={16} />
-      </button>
-      <input
-        type="text"
-        inputMode="numeric"
-        value={draft}
-        onChange={(e) => change(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
-        onBlur={normalize}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-        }}
-        aria-label="Количество в корзине"
-        className="h-full min-w-0 flex-1 bg-transparent text-center text-base font-semibold tabular-nums text-gray-900 outline-none"
-      />
-      <button
-        onClick={() => onSet(qty + 1)}
-        title="Добавить ещё"
-        className="flex h-full w-10 shrink-0 items-center justify-center rounded-r-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink"
-      >
-        <Plus size={16} />
-      </button>
-    </div>
   );
 }
 
@@ -315,6 +251,7 @@ export default function Catalog({
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [inStock, setInStock] = useState(false);
+  const [sort, setSort] = useState(""); // "" | price_asc | price_desc
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -438,6 +375,7 @@ export default function Catalog({
       if (minPrice) params.set("minPrice", minPrice);
       if (maxPrice) params.set("maxPrice", maxPrice);
       if (inStock) params.set("inStock", "1");
+      if (sort) params.set("sort", sort);
       params.set("page", String(p));
       return params.toString();
     };
@@ -504,7 +442,7 @@ export default function Catalog({
         .finally(() => setLoading(false));
     }, delay);
     return () => clearTimeout(t);
-  }, [query, make, model, category, categoryGroup, minPrice, maxPrice, inStock, page]);
+  }, [query, make, model, category, categoryGroup, minPrice, maxPrice, inStock, sort, page]);
 
   function handleAdd(row: CatalogRow) {
     add({
@@ -527,6 +465,7 @@ export default function Catalog({
     setMinPrice("");
     setMaxPrice("");
     setInStock(false);
+    setSort("");
     setPage(1);
   }
 
@@ -545,7 +484,8 @@ export default function Catalog({
     categoryGroup ||
     minPrice ||
     maxPrice ||
-    inStock
+    inStock ||
+    sort
   );
 
   const empty = !loading && rows.length === 0;
@@ -764,6 +704,24 @@ export default function Catalog({
               </div>
             </div>
 
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Сортировка
+              </label>
+              <select
+                value={sort}
+                onChange={(e) => {
+                  setSort(e.target.value);
+                  setPage(1);
+                }}
+                className="input"
+              >
+                <option value="">По умолчанию</option>
+                <option value="price_asc">Цена: по возрастанию</option>
+                <option value="price_desc">Цена: по убыванию</option>
+              </select>
+            </div>
+
             <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
               <input
                 type="checkbox"
@@ -815,7 +773,7 @@ export default function Catalog({
                     <tr>
                       <th className="w-14">Фото</th>
                       <th className="w-40">Артикул</th>
-                      <th className="w-28">Марка</th>
+                      <th className="w-36">Категория</th>
                       <th>Применяемость</th>
                       <th className="w-28 text-right">Цена</th>
                       <th className="w-60">Наличие</th>
@@ -851,9 +809,12 @@ export default function Catalog({
                             </div>
                           </td>
                           <td>
-                            {row.brand ? (
-                              <span className="font-medium text-ink">
-                                {row.brand}
+                            {visibleCategory(row.category) ? (
+                              <span
+                                title={row.category ?? undefined}
+                                className="font-medium text-ink"
+                              >
+                                {visibleCategory(row.category)}
                               </span>
                             ) : (
                               <span className="text-muted">—</span>
@@ -886,11 +847,6 @@ export default function Catalog({
                                 <Replace size={10} /> Аналог:{" "}
                                 {row.viaAnalog.brand || "—"} ({row.viaAnalog.code}
                                 )
-                              </div>
-                            )}
-                            {row.category && (
-                              <div className="mt-0.5 text-[10px] uppercase tracking-wide text-gray-400">
-                                {row.category}
                               </div>
                             )}
                           </td>
@@ -941,16 +897,21 @@ export default function Catalog({
                                 </button>
                                 <button
                                   onClick={() => handleAdd(row)}
+                                  disabled={!inCart && row.totalQty === 0}
                                   title={
                                     inCart
                                       ? `В корзине: ${qtyInCart} шт — добавить ещё`
-                                      : "В корзину"
+                                      : row.totalQty === 0
+                                        ? "Нет в наличии — добавьте в избранное"
+                                        : "В корзину"
                                   }
                                   className={cx(
                                     "relative flex h-8 w-8 items-center justify-center rounded transition-colors",
                                     inCart
                                       ? "bg-green-600 text-white"
-                                      : "bg-accent text-white hover:bg-accent-dark"
+                                      : row.totalQty === 0
+                                        ? "cursor-not-allowed bg-gray-100 text-gray-300"
+                                        : "bg-accent text-white hover:bg-accent-dark"
                                   )}
                                 >
                                   {inCart ? (
@@ -1130,6 +1091,14 @@ export default function Catalog({
                                 onSet={(n) => setCartQty(row.id, n)}
                                 onRemove={() => removeFromCart(row.id)}
                               />
+                            ) : row.totalQty === 0 ? (
+                              <button
+                                disabled
+                                title="Нет на складах — добавьте в избранное, чтобы не потерять"
+                                className="btn h-9 w-full cursor-not-allowed whitespace-nowrap bg-gray-100 text-muted"
+                              >
+                                Нет в наличии
+                              </button>
                             ) : (
                               <button
                                 onClick={() => handleAdd(row)}

@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
   const minPrice = parseFloat(sp.get("minPrice") ?? "");
   const maxPrice = parseFloat(sp.get("maxPrice") ?? "");
   const inStock = sp.get("inStock") === "1";
+  const sort = sp.get("sort") ?? ""; // "" | price_asc | price_desc
   const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
   const PAGE_SIZE = 50;
 
@@ -58,11 +59,13 @@ export async function GET(req: NextRequest) {
 
   const and: Prisma.ProductWhereInput[] = [];
   if (q) {
+    // Note: no `brand` clause on purpose — the make is derived from full_name
+    // anyway, so "genesis" must match via applicability text, not the make
+    // facet (the user filters by make separately).
     const or: Prisma.ProductWhereInput[] = [
       { sku: { contains: q, mode: "insensitive" } },
       { fullName: { contains: q, mode: "insensitive" } },
       { name: { contains: q, mode: "insensitive" } },
-      { brand: { contains: q, mode: "insensitive" } },
     ];
     // Smart match: ignore spaces/dashes/case (zeekr 9x = zeekr9x = zeekr-9x).
     if (normQ.length >= 2) {
@@ -92,6 +95,11 @@ export async function GET(req: NextRequest) {
   }
   // Never show products from hidden technical 1С folders (Unused / Архив папки).
   and.push(NOT_HIDDEN_CATEGORY);
+  // Explicit price sorting: zero-priced items ("цена по запросу") would all
+  // pile up at the top of "по возрастанию" — hide them while sorting by price.
+  if (sort === "price_asc" || sort === "price_desc") {
+    and.push({ price: { gt: 0 } });
+  }
   const where: Prisma.ProductWhereInput = { AND: and };
 
   const skip = (page - 1) * PAGE_SIZE;
@@ -106,7 +114,13 @@ export async function GET(req: NextRequest) {
           orderBy: { warehouse: { name: "asc" } },
         },
       },
-      orderBy: [{ pinned: "desc" }, { pinnedAt: "desc" }, { name: "asc" }],
+      // An explicit price sort overrides the pinned-first ordering.
+      orderBy:
+        sort === "price_asc"
+          ? [{ price: "asc" }, { name: "asc" }]
+          : sort === "price_desc"
+            ? [{ price: "desc" }, { name: "asc" }]
+            : [{ pinned: "desc" }, { pinnedAt: "desc" }, { name: "asc" }],
       skip,
       take: PAGE_SIZE,
     }),
