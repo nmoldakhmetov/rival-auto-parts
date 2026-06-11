@@ -2,9 +2,24 @@
 
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Search, Phone, MessageCircle, ChevronDown, Clock, Mail } from "lucide-react";
+import {
+  Search,
+  Phone,
+  MessageCircle,
+  ChevronDown,
+  Clock,
+  Mail,
+  UserRound,
+} from "lucide-react";
 import { useSearch } from "@/store/search";
+import { normalizePhone } from "@/lib/whatsapp";
 import BroadcastBell from "@/components/BroadcastBell";
+
+type Manager = {
+  fullName: string;
+  phone: string | null;
+  email: string | null;
+};
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -46,12 +61,15 @@ function Dept({ d }: { d: (typeof DEPTS)["retail"] }) {
   );
 }
 
-export default function Header() {
+export default function Header({ manager }: { manager?: Manager | null }) {
   const router = useRouter();
   const pathname = usePathname();
   const query = useSearch((s) => s.query);
   const setQuery = useSearch((s) => s.setQuery);
   const [open, setOpen] = useState(false);
+
+  // The green WhatsApp button prefers the client's own manager.
+  const waNumber = manager?.phone ? normalizePhone(manager.phone) : WA_NUMBER;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,12 +96,16 @@ export default function Header() {
         {/* Broadcasts / promos (clients only — self-hides otherwise) */}
         <BroadcastBell />
 
-        {/* WhatsApp */}
+        {/* WhatsApp — the client's manager when assigned, else the dept line */}
         <a
-          href={`https://wa.me/${WA_NUMBER}`}
+          href={`https://wa.me/${waNumber}`}
           target="_blank"
           rel="noopener noreferrer"
-          title="Написать в WhatsApp"
+          title={
+            manager?.phone
+              ? `Написать менеджеру (${manager.fullName}) в WhatsApp`
+              : "Написать в WhatsApp"
+          }
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#25D366]/10 text-[#1FAF53] transition-all duration-200 hover:bg-[#25D366] hover:text-white hover:shadow-md"
         >
           <MessageCircle size={18} />
@@ -120,6 +142,45 @@ export default function Header() {
                 : "invisible -translate-y-1 opacity-0"
             )}
           >
+            {manager && (
+              <>
+                <div>
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-accent">
+                    <UserRound size={12} /> Ваш менеджер
+                  </div>
+                  <div className="text-sm font-semibold text-ink">
+                    {manager.fullName}
+                  </div>
+                  {manager.phone && (
+                    <a
+                      href={`tel:${manager.phone}`}
+                      className="mt-1 flex items-center gap-2 text-sm font-semibold text-ink transition-colors hover:text-accent"
+                    >
+                      <Phone size={14} className="text-accent" /> {manager.phone}
+                    </a>
+                  )}
+                  {manager.email && (
+                    <a
+                      href={`mailto:${manager.email}`}
+                      className="mt-1 flex items-center gap-2 text-xs text-muted transition-colors hover:text-accent"
+                    >
+                      <Mail size={13} /> {manager.email}
+                    </a>
+                  )}
+                  {manager.phone && (
+                    <a
+                      href={`https://wa.me/${normalizePhone(manager.phone)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 flex w-fit items-center gap-1.5 rounded-lg bg-[#25D366]/10 px-2.5 py-1.5 text-xs font-semibold text-[#1FAF53] transition-colors hover:bg-[#25D366] hover:text-white"
+                    >
+                      <MessageCircle size={14} /> Написать в WhatsApp
+                    </a>
+                  )}
+                </div>
+                <div className="my-3 border-t border-line" />
+              </>
+            )}
             <Dept d={DEPTS.retail} />
             <div className="my-3 border-t border-line" />
             <Dept d={DEPTS.wholesale} />

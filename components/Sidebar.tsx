@@ -24,6 +24,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { useCart } from "@/store/cart";
+import { formatTenge } from "@/lib/format";
 import type { Role } from "@/lib/jwt";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
@@ -38,10 +39,12 @@ export default function Sidebar({
   role,
   fullName,
   login,
+  balance,
 }: {
   role: Role;
   fullName: string;
   login: string;
+  balance?: number | null;
 }) {
   const pathname = usePathname();
   const count = useCart((s) => s.items.reduce((a, i) => a + i.qty, 0));
@@ -118,6 +121,7 @@ export default function Sidebar({
               Icon={ShoppingCart}
               badge={mounted && count > 0 ? count : undefined}
             />
+            <NavLink href="/favorites" label="Избранное" Icon={Heart} />
             <NavLink href="/orders" label="Мои заказы" Icon={ClipboardList} />
             <NavLink href="/returns" label="Возвраты" Icon={Undo2} />
           </>
@@ -148,6 +152,26 @@ export default function Sidebar({
       </nav>
 
       <div className="border-t border-sidebar-border p-3">
+        {role === "CLIENT" && balance != null && (
+          <div
+            className={cx(
+              "mx-1 mb-2 flex items-center justify-between rounded-md px-3 py-2 text-xs",
+              balance < 0
+                ? "bg-accent/20 text-red-200"
+                : "bg-white/5 text-white/70"
+            )}
+            title={
+              balance < 0
+                ? "Задолженность перед Rival Auto"
+                : "Ваш текущий баланс"
+            }
+          >
+            <span>{balance < 0 ? "Долг" : "Баланс"}</span>
+            <span className="font-bold tabular-nums">
+              {formatTenge(Math.abs(balance))}
+            </span>
+          </div>
+        )}
         <div className="px-2 pb-2">
           <div className="truncate text-sm font-semibold">{fullName}</div>
           <div className="text-[11px] text-white/40">

@@ -19,14 +19,20 @@ export default async function PortalLayout({
     message: string;
     manager: { fullName: string; phone: string | null; email: string | null } | null;
   } | null = null;
+  let manager: { fullName: string; phone: string | null; email: string | null } | null =
+    null;
+  let balance: number | null = null;
   if (session.role === "CLIENT") {
     const user = await prisma.user.findUnique({
       where: { id: session.sub },
       select: {
         isActive: true,
+        balance: true,
         manager: { select: { fullName: true, phone: true, email: true } },
       },
     });
+    manager = user?.manager ?? null;
+    balance = user ? Number(user.balance) : null;
     if (user && !user.isActive) {
       blocked = {
         message: await getSetting("blocked_message"),
@@ -42,9 +48,10 @@ export default async function PortalLayout({
         role={session.role}
         fullName={session.fullName}
         login={session.login}
+        balance={balance}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header />
+        <Header manager={manager} />
         <main className="min-h-0 flex-1 overflow-auto bg-[#f3f4f6]">
           {children}
         </main>
