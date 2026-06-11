@@ -320,7 +320,7 @@ export default function Catalog({
   const [pageSize, setPageSize] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
 
-  const [view, setView] = useState<ViewMode>("list");
+  const [view, setView] = useState<ViewMode>("grid");
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
@@ -512,6 +512,9 @@ export default function Catalog({
       sku: row.sku,
       name: row.name,
       price: row.price,
+      // Carry the discount into the cart so it stays visible there.
+      oldPrice: row.oldPrice,
+      discountPct: row.discountPct,
       imageUrl: row.imageUrl,
     });
   }

@@ -7,7 +7,9 @@ export type CartItem = {
   productId: string;
   sku: string;
   name: string;
-  price: number;
+  price: number; // цена для клиента (уже со скидкой)
+  oldPrice?: number | null; // зачёркнутая цена, если есть скидка
+  discountPct?: number; // суммарная скидка, % (для плашки в корзине)
   imageUrl?: string | null;
   qty: number;
 };
