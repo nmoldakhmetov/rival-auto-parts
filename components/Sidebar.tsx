@@ -112,7 +112,7 @@ export default function Sidebar({
       <nav className="flex-1 space-y-0.5 overflow-y-auto py-3">
         <NavLink href="/" label="Главная" Icon={Home} />
         <NavLink href="/catalog" label="Каталог" Icon={LayoutGrid} />
-        <NavLink href="/contacts" label="Контакты" Icon={MapPin} />
+        <NavLink href="/#contacts" label="Контакты" Icon={MapPin} />
         {role === "CLIENT" && (
           <>
             <NavLink
