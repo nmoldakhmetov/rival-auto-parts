@@ -2,12 +2,14 @@ import cron, { type ScheduledTask } from "node-cron";
 import { runSync } from "./sync-runner";
 import { getSetting } from "./settings";
 import { prefetchAllImages } from "./image-cache";
+import { runMaintenance } from "./maintenance";
 
 const DEFAULT_CRON = "*/30 * * * *"; // every 30 minutes
 
 const g = globalThis as unknown as {
   __rivalCronTask?: ScheduledTask;
   __rivalCronExpr?: string;
+  __rivalMaintTask?: ScheduledTask;
 };
 
 export function getScheduleInfo() {
@@ -88,7 +90,33 @@ export async function applySyncSchedule(): Promise<{
   return { active: true, expr };
 }
 
+// Housekeeping (auto-block of debtors, discount/badge expiry) runs on its own
+// fixed schedule, independent of the 1С sync being on or off.
+function startMaintenance() {
+  if (g.__rivalMaintTask) return;
+  const tick = async () => {
+    try {
+      const r = await runMaintenance();
+      if (r.blocked || r.dropsExpired || r.debtMarked) {
+        console.log(
+          `[maintenance] блокировок: ${r.blocked}, долг отмечен: ${r.debtMarked}, ` +
+            `скидок снято: ${r.dropsExpired}, новинок снято: ${r.newExpired}`
+        );
+      }
+    } catch (e) {
+      console.warn("[maintenance] ошибка:", e instanceof Error ? e.message : e);
+    }
+  };
+  g.__rivalMaintTask = cron.schedule("*/10 * * * *", tick, {
+    name: "rival-maintenance",
+    noOverlap: true,
+  });
+  void tick(); // run once at startup
+  console.log("[maintenance] фоновые проверки запущены (каждые 10 минут)");
+}
+
 export function startSyncScheduler() {
   // Fire-and-forget at server start (instrumentation hook).
   void applySyncSchedule();
+  startMaintenance();
 }

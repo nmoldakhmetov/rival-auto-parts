@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { useCart } from "@/store/cart";
 import { useSearch } from "@/store/search";
-import { formatTenge, formatNum } from "@/lib/format";
+import { formatTenge, formatNum, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
 import CartQtySelector from "@/components/CartQtySelector";
 import type { CatalogRow } from "@/lib/types";
@@ -115,6 +115,7 @@ type SearchResp = {
   shown?: number;
   totalPages?: number;
   pageSize?: number;
+  discountDisplay?: string;
 };
 
 // Builds a windowed list of page numbers; -1 marks an ellipsis gap.
@@ -252,6 +253,7 @@ export default function Catalog({
   const [maxPrice, setMaxPrice] = useState("");
   const [inStock, setInStock] = useState(false);
   const [sort, setSort] = useState(""); // "" | price_asc | price_desc
+  const [discountDisplay, setDiscountDisplay] = useState("percent");
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -395,6 +397,7 @@ export default function Catalog({
       setShown(d.shown ?? d.rows?.length ?? 0);
       setTotalPages(d.totalPages ?? 1);
       if (d.pageSize) setPageSize(d.pageSize);
+      if (d.discountDisplay) setDiscountDisplay(d.discountDisplay);
     };
 
     const delay = query !== prevQueryRef.current ? 300 : 0;
@@ -862,8 +865,13 @@ export default function Catalog({
                                 <div className="flex items-center justify-end gap-1.5">
                                   {formatTenge(row.price)}
                                   {row.discountPct > 0 && (
-                                    <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                                      −{row.discountPct}%
+                                    <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                      {formatDiscount(
+                                        discountDisplay,
+                                        row.discountPct,
+                                        row.oldPrice,
+                                        row.price
+                                      )}
                                     </span>
                                   )}
                                 </div>
@@ -1069,8 +1077,13 @@ export default function Catalog({
                                   <span className="text-sm text-gray-400 line-through">
                                     {formatTenge(oldP)}
                                   </span>
-                                  <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                                    −{pct}%
+                                  <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                    {formatDiscount(
+                                      discountDisplay,
+                                      pct,
+                                      oldP,
+                                      row.price
+                                    )}
                                   </span>
                                 </div>
                               )}

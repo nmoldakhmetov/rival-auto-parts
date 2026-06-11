@@ -65,6 +65,7 @@ model User {
   discountPercent Int  @default(0) // персональная скидка клиента, %
   comment      String?
   isActive     Boolean @default(true)
+  debtSince    DateTime? // с какого момента баланс ушёл в минус (для автоблокировки)
 
   // Manager ↔ Client self-relation: a CLIENT references its MANAGER
   managerId String?
@@ -100,6 +101,8 @@ model Product {
   category String?
   price    Decimal  @default(0) @db.Decimal(12, 2) // базовая цена
   oldPrice Decimal? @db.Decimal(12, 2) // цена до последнего изменения (скидка от снижения)
+  priceDropAt DateTime? // когда зафиксировано снижение цены (скидка живёт N дней)
+  newUntil    DateTime? // авто-значок «новинка» до этой даты (ставится при появлении в 1С)
   imageUrl String?
 
   model        String? // модель авто (выводится из применяемости)

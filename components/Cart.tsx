@@ -14,7 +14,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useCart, cartSum } from "@/store/cart";
-import { formatTenge } from "@/lib/format";
+import { formatTenge, formatDiscount } from "@/lib/format";
 
 type CheckoutResult = {
   orderNo: string;
@@ -22,7 +22,11 @@ type CheckoutResult = {
   manager: { fullName: string; phone: string | null } | null;
 };
 
-export default function Cart() {
+export default function Cart({
+  discountDisplay,
+}: {
+  discountDisplay?: string;
+}) {
   const { items, setQty, remove, clear } = useCart();
   const [mounted, setMounted] = useState(false);
   const [comment, setComment] = useState("");
@@ -185,8 +189,13 @@ export default function Cart() {
                               {formatTenge(i.oldPrice)}
                             </span>
                           )}
-                          <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                            −{i.discountPct}%
+                          <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                            {formatDiscount(
+                              discountDisplay,
+                              i.discountPct ?? 0,
+                              i.oldPrice,
+                              i.price
+                            )}
                           </span>
                         </div>
                         <span className="font-semibold text-ink">

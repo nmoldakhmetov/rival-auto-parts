@@ -35,6 +35,8 @@ export async function PUT(req: NextRequest) {
 
   // Discount contexts are cached per user for 30 s in the search route.
   if (discountChanged) invalidatePrefix("disc:");
+  // Display/automation knobs are cached under cfg: — refresh immediately.
+  invalidatePrefix("cfg:");
 
   // Re-arm the in-process auto-sync scheduler with the new interval.
   let schedule = null;

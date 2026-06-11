@@ -119,10 +119,68 @@ body {
   transition: opacity 0.2s ease;
 }
 
+/* Bell with unread broadcasts: gentle swing + glowing ring + pulsing badge */
+@keyframes bell-swing {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  5% {
+    transform: rotate(14deg);
+  }
+  15% {
+    transform: rotate(-12deg);
+  }
+  25% {
+    transform: rotate(9deg);
+  }
+  35% {
+    transform: rotate(-6deg);
+  }
+  45% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes bell-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(229, 57, 53, 0);
+  }
+}
+
+@keyframes badge-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+.animate-bell {
+  animation: bell-glow 2s ease-in-out infinite;
+}
+.animate-bell-swing {
+  transform-origin: top center;
+  animation: bell-swing 2.4s ease-in-out infinite;
+}
+.badge-pulse {
+  animation: badge-pulse 1.6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in-up,
   .skeleton,
-  .loading-bar::after {
+  .loading-bar::after,
+  .animate-bell,
+  .animate-bell-swing,
+  .badge-pulse {
     animation: none !important;
   }
 }
