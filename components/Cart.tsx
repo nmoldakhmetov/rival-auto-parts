@@ -139,6 +139,12 @@ export default function Cart() {
   }
 
   const total = cartSum(items);
+  // Total saved vs the struck prices — shown in the summary when > 0.
+  const savings = items.reduce(
+    (s, i) =>
+      s + (i.oldPrice && i.oldPrice > i.price ? (i.oldPrice - i.price) * i.qty : 0),
+    0
+  );
 
   // ─── Cart contents ─────────────────────────────────────────────────────
   return (
@@ -170,7 +176,27 @@ export default function Cart() {
                     <div className="font-semibold text-ink">{i.sku}</div>
                     <div className="text-[11px] text-muted">{i.name}</div>
                   </td>
-                  <td className="text-right">{formatTenge(i.price)}</td>
+                  <td className="text-right">
+                    {i.discountPct && i.discountPct > 0 ? (
+                      <div className="flex flex-col items-end gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          {i.oldPrice != null && (
+                            <span className="text-[11px] text-gray-400 line-through">
+                              {formatTenge(i.oldPrice)}
+                            </span>
+                          )}
+                          <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                            −{i.discountPct}%
+                          </span>
+                        </div>
+                        <span className="font-semibold text-ink">
+                          {formatTenge(i.price)}
+                        </span>
+                      </div>
+                    ) : (
+                      formatTenge(i.price)
+                    )}
+                  </td>
                   <td>
                     <div className="flex items-center justify-center gap-1">
                       <button
@@ -222,6 +248,14 @@ export default function Cart() {
               {formatTenge(total)}
             </span>
           </div>
+          {savings > 0 && (
+            <div className="-mt-2 mb-3 flex items-center justify-between text-xs">
+              <span className="text-muted">Ваша скидка</span>
+              <span className="rounded-full bg-green-50 px-2 py-0.5 font-semibold text-green-700">
+                −{formatTenge(savings)}
+              </span>
+            </div>
+          )}
 
           <textarea
             value={comment}
