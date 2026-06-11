@@ -119,6 +119,11 @@ body {
   transition: opacity 0.2s ease;
 }
 
+/* Smooth in-page anchor scrolling (e.g. «Контакты» → /#contacts) */
+main {
+  scroll-behavior: smooth;
+}
+
 /* Bell with unread broadcasts: gentle swing + glowing ring + pulsing badge */
 @keyframes bell-swing {
   0%,
@@ -182,5 +187,8 @@ body {
   .animate-bell-swing,
   .badge-pulse {
     animation: none !important;
+  }
+  main {
+    scroll-behavior: auto;
   }
 }
