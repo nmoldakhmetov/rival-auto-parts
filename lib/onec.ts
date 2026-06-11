@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getSetting } from "@/lib/settings";
 
 // ─────────────────────────────────────────────────────────────────────────
 //  1С integration: fetch the product feed and upsert Product / Warehouse /
@@ -320,12 +321,29 @@ export async function syncFromOneC(): Promise<SyncResult> {
       result.warehousesUpserted++;
     }
 
-    // Existing prices → compute oldPrice when a price drops on this sync.
+    // Existing price state → keep / start / clear the price-drop discount.
+    // The sync may run every minute, so an unchanged price must PRESERVE the
+    // current discount (oldPrice/priceDropAt), not reset it.
     const existing = await prisma.product.findMany({
       where: { code: { in: products.map(([c]) => c) } },
-      select: { code: true, price: true },
+      select: { code: true, price: true, oldPrice: true, priceDropAt: true },
     });
-    const prevPriceMap = new Map(existing.map((p) => [p.code, Number(p.price)]));
+    const prevMap = new Map(
+      existing.map((p) => [
+        p.code,
+        {
+          price: Number(p.price),
+          oldPrice: p.oldPrice != null ? Number(p.oldPrice) : null,
+          priceDropAt: p.priceDropAt,
+        },
+      ])
+    );
+
+    // Auto-"новинка": products first seen in 1С wear the NEW badge for N days.
+    const now = new Date();
+    const newDays = parseInt(await getSetting("new_badge_days"), 10) || 0;
+    const newUntil =
+      newDays > 0 ? new Date(now.getTime() + newDays * 86_400_000) : null;
 
     // 2) Upsert products (+ stocks) in bounded-concurrency chunks.
     const CHUNK = 25;
@@ -352,14 +370,31 @@ export async function syncFromOneC(): Promise<SyncResult> {
             skuNorm: normSearch(skuVal),
             fullNameNorm: normSearch(fullName),
           };
-          // Record the previous price as oldPrice only when the price dropped.
-          const prev = prevPriceMap.get(code);
-          const oldPrice = prev !== undefined && priceVal < prev ? prev : null;
+          // Price-drop discount lifecycle:
+          //  • price went DOWN  → strike the highest known price, stamp now;
+          //  • price unchanged  → keep the existing discount untouched;
+          //  • price went UP    → discount is gone.
+          const prev = prevMap.get(code);
+          let oldPrice: number | null = null;
+          let priceDropAt: Date | null = null;
+          if (prev) {
+            if (priceVal < prev.price) {
+              oldPrice = Math.max(prev.price, prev.oldPrice ?? 0);
+              priceDropAt = now;
+            } else if (
+              priceVal === prev.price &&
+              prev.oldPrice != null &&
+              priceVal < prev.oldPrice
+            ) {
+              oldPrice = prev.oldPrice;
+              priceDropAt = prev.priceDropAt;
+            }
+          }
 
           const product = await prisma.product.upsert({
             where: { code },
-            create: { code, ...fields },
-            update: { ...fields, oldPrice },
+            create: { code, ...fields, newUntil },
+            update: { ...fields, oldPrice, priceDropAt },
           });
           result.productsUpserted++;
 

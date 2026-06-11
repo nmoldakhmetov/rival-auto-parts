@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Heart, ShoppingCart, ImageOff } from "lucide-react";
 import { useCart } from "@/store/cart";
-import { formatTenge } from "@/lib/format";
+import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
 import type { CatalogRow } from "@/lib/types";
 import CartQtySelector from "@/components/CartQtySelector";
@@ -14,6 +14,7 @@ import CartQtySelector from "@/components/CartQtySelector";
 export default function FavoritesClient() {
   const [rows, setRows] = useState<CatalogRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [discountDisplay, setDiscountDisplay] = useState("percent");
 
   const cartItems = useCart((s) => s.items);
   const add = useCart((s) => s.add);
@@ -27,7 +28,10 @@ export default function FavoritesClient() {
   useEffect(() => {
     fetch("/api/favorites?full=1")
       .then((r) => r.json())
-      .then((d) => setRows(d.rows ?? []))
+      .then((d) => {
+        setRows(d.rows ?? []);
+        if (d.discountDisplay) setDiscountDisplay(d.discountDisplay);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -178,8 +182,13 @@ export default function FavoritesClient() {
                           <span className="text-sm text-gray-400 line-through">
                             {formatTenge(row.oldPrice)}
                           </span>
-                          <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                            −{row.discountPct}%
+                          <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                            {formatDiscount(
+                              discountDisplay,
+                              row.discountPct,
+                              row.oldPrice,
+                              row.price
+                            )}
                           </span>
                         </div>
                       )}

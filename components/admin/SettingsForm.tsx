@@ -8,6 +8,8 @@ import {
   Percent,
   Lock,
   RefreshCw,
+  Tags,
+  Timer,
 } from "lucide-react";
 
 const SYNC_PRESETS: { value: string; label: string }[] = [
@@ -25,6 +27,10 @@ export default function SettingsForm() {
   const [globalDiscount, setGlobalDiscount] = useState("0");
   const [syncCron, setSyncCron] = useState("*/30 * * * *");
   const [customCron, setCustomCron] = useState(false);
+  const [discountDisplay, setDiscountDisplay] = useState("percent");
+  const [autoBlockDays, setAutoBlockDays] = useState("30");
+  const [newBadgeDays, setNewBadgeDays] = useState("40");
+  const [priceDropDays, setPriceDropDays] = useState("13");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -38,10 +44,17 @@ export default function SettingsForm() {
         const cron = d.settings?.sync_cron ?? "*/30 * * * *";
         setSyncCron(cron);
         setCustomCron(!SYNC_PRESETS.some((p) => p.value === cron));
+        setDiscountDisplay(d.settings?.discount_display ?? "percent");
+        setAutoBlockDays(d.settings?.auto_block_days ?? "30");
+        setNewBadgeDays(d.settings?.new_badge_days ?? "40");
+        setPriceDropDays(d.settings?.price_drop_days ?? "13");
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const days = (v: string) =>
+    String(Math.max(0, Math.min(3650, parseInt(v) || 0)));
 
   async function save() {
     setSaving(true);
@@ -57,6 +70,11 @@ export default function SettingsForm() {
               Math.max(0, Math.min(95, parseInt(globalDiscount) || 0))
             ),
             sync_cron: syncCron.trim() || "*/30 * * * *",
+            discount_display:
+              discountDisplay === "amount" ? "amount" : "percent",
+            auto_block_days: days(autoBlockDays),
+            new_badge_days: days(newBadgeDays),
+            price_drop_days: days(priceDropDays),
           },
         }),
       });
@@ -92,6 +110,117 @@ export default function SettingsForm() {
             className="input w-28"
           />
           <span className="text-sm text-muted">%</span>
+        </div>
+      </div>
+
+      {/* Discount display mode */}
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-ink">
+          <Tags size={15} className="text-accent" /> Отображение скидки на
+          карточках
+        </h2>
+        <p className="mb-3 text-xs text-muted">
+          Как показывать плашку скидки клиентам: в процентах или суммой в тенге.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setDiscountDisplay("percent")}
+            className={
+              discountDisplay === "percent"
+                ? "flex items-center gap-1.5 rounded-lg border border-accent bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent"
+                : "flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-muted hover:border-accent/40"
+            }
+          >
+            Проценты&nbsp;
+            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+              −15%
+            </span>
+          </button>
+          <button
+            onClick={() => setDiscountDisplay("amount")}
+            className={
+              discountDisplay === "amount"
+                ? "flex items-center gap-1.5 rounded-lg border border-accent bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent"
+                : "flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-muted hover:border-accent/40"
+            }
+          >
+            Сумма&nbsp;
+            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+              −1 500 ₸
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Automation timers */}
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-ink">
+          <Timer size={15} className="text-accent" /> Автоматизация
+        </h2>
+        <p className="mb-3 text-xs text-muted">
+          Сроки в днях. 0 — отключить правило.
+        </p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium text-ink">
+                Автоблокировка должника
+              </div>
+              <div className="text-[11px] text-muted">
+                Клиент блокируется, если долг (минусовой баланс) держится дольше
+                указанного срока. Погашение долга сбрасывает отсчёт.
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <input
+                type="number"
+                value={autoBlockDays}
+                onChange={(e) => setAutoBlockDays(e.target.value)}
+                className="input w-20 text-center"
+              />
+              <span className="text-xs text-muted">дн.</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+            <div>
+              <div className="text-sm font-medium text-ink">
+                Значок «Новинка» для новых товаров
+              </div>
+              <div className="text-[11px] text-muted">
+                Товар, впервые появившийся в 1С, носит значок указанное число
+                дней.
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <input
+                type="number"
+                value={newBadgeDays}
+                onChange={(e) => setNewBadgeDays(e.target.value)}
+                className="input w-20 text-center"
+              />
+              <span className="text-xs text-muted">дн.</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+            <div>
+              <div className="text-sm font-medium text-ink">
+                Скидка при снижении цены в 1С
+              </div>
+              <div className="text-[11px] text-muted">
+                Зачёркнутая цена и плашка скидки показываются указанное число
+                дней после снижения.
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <input
+                type="number"
+                value={priceDropDays}
+                onChange={(e) => setPriceDropDays(e.target.value)}
+                className="input w-20 text-center"
+              />
+              <span className="text-xs text-muted">дн.</span>
+            </div>
+          </div>
         </div>
       </div>
 

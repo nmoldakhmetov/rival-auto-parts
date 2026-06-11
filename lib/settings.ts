@@ -6,6 +6,12 @@ export const DEFAULTS: Record<string, string> = {
     "Ваш аккаунт временно заблокирован. Свяжитесь с вашим менеджером.",
   global_discount: "0",
   sync_cron: "*/30 * * * *",
+  // Автоматизация: 0 = выключено.
+  auto_block_days: "30", // автоблокировка клиента, чей долг старше N дней
+  new_badge_days: "40", // сколько дней новый товар из 1С носит значок «новинка»
+  price_drop_days: "13", // сколько дней держится скидка от снижения цены в 1С
+  // Как показывать скидку на карточках: percent (−15%) или amount (−1 234 ₸).
+  discount_display: "percent",
 };
 
 export async function getSetting(key: string): Promise<string> {
