@@ -48,6 +48,7 @@ export async function GET() {
               oldPrice: true,
               priceDropAt: true,
               newUntil: true,
+              isFinalPrice: true,
               imageUrl: true,
               badge: true,
               stocks: {

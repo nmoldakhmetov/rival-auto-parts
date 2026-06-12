@@ -237,9 +237,17 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
 export default function Catalog({
   role,
   hasNoAccess,
+  broadcastId,
+  heading,
+  subheading,
 }: {
   role: Role;
   hasNoAccess: boolean;
+  // Optional broadcast scope: full catalog UX limited to one broadcast's
+  // products (used by /broadcasts/[id], «как каталог»).
+  broadcastId?: string;
+  heading?: string;
+  subheading?: string;
 }) {
   // Search query is shared with the global Header via the search store.
   const query = useSearch((s) => s.query);
@@ -383,6 +391,7 @@ export default function Catalog({
       if (maxPrice) params.set("maxPrice", maxPrice);
       if (inStock) params.set("inStock", "1");
       if (sort) params.set("sort", sort);
+      if (broadcastId) params.set("broadcast", broadcastId);
       params.set("page", String(p));
       return params.toString();
     };
@@ -450,7 +459,7 @@ export default function Catalog({
         .finally(() => setLoading(false));
     }, delay);
     return () => clearTimeout(t);
-  }, [query, make, model, category, categoryGroup, minPrice, maxPrice, inStock, sort, page]);
+  }, [query, make, model, category, categoryGroup, minPrice, maxPrice, inStock, sort, broadcastId, page]);
 
   function handleAdd(row: CatalogRow) {
     add({
@@ -527,14 +536,16 @@ export default function Catalog({
       {/* Slim header (the search lives in the global Header now) */}
       <div className="flex items-center justify-between gap-4 border-b border-line bg-white px-6 py-3">
         <div className="min-w-0">
-          <h1 className="text-lg font-bold text-ink">Каталог запчастей</h1>
+          <h1 className="truncate text-lg font-bold text-ink">
+            {heading ?? "Каталог запчастей"}
+          </h1>
           <p className="truncate text-xs text-muted">
             {query ? (
               <>
                 Поиск: «<span className="text-ink">{query}</span>» ·{" "}
               </>
             ) : null}
-            Фильтры по марке, категории и цене
+            {subheading ?? "Фильтры по марке, категории и цене"}
           </p>
         </div>
 
