@@ -49,6 +49,16 @@ function toNumber(v: unknown): number {
   return 0;
 }
 
+function toBool(v: unknown): boolean {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v !== 0;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s === "true" || s === "1" || s === "да" || s === "истина";
+  }
+  return false;
+}
+
 // Normalized search key (separators stripped, lowercased) for skuNorm/fullNameNorm.
 const SEARCH_SEP = /[\s\-_./()[\]]+/g;
 function normSearch(s: string | null): string | null {
@@ -67,6 +77,7 @@ const FULLNAME_KEYS = [
 const BRAND_KEYS = ["brand", "Brand", "Бренд", "manufacturer", "Производитель", "vendor", "Марка"];
 const CATEGORY_KEYS = ["category", "Category", "Категория", "group", "Группа", "ГруппаТоваров"];
 const PRICE_KEYS = ["price", "Price", "Цена", "cost", "ЦенаПродажи", "РозничнаяЦена", "ОптоваяЦена"];
+const FINAL_PRICE_KEYS = ["is_final_price", "isFinalPrice", "IsFinalPrice", "ФинальнаяЦена", "ЦенаФинальная"];
 const IMAGE_KEYS = ["image_url", "imageUrl", "image", "Картинка", "picture", "img", "Изображение", "photo", "Фото", "url"];
 const STOCKS_KEYS = ["stocks", "Stocks", "Остатки", "остатки", "rests", "warehouses", "Склады", "ОстаткиПоСкладам"];
 const WH_NAME_KEYS = ["warehouse", "Warehouse", "Склад", "warehouse_name", "warehouseName", "name", "Name", "НаименованиеСклада", "Хранилище"];
@@ -366,6 +377,8 @@ export async function syncFromOneC(): Promise<SyncResult> {
             modelNorm: normSearch(modelVal),
             category: asString(pick(it, CATEGORY_KEYS)),
             price: priceVal,
+            // 1С marks some items as final-priced → client discounts must skip them.
+            isFinalPrice: toBool(pick(it, FINAL_PRICE_KEYS)),
             imageUrl: rawImg ? rewriteImageHost(rawImg) : null,
             skuNorm: normSearch(skuVal),
             fullNameNorm: normSearch(fullName),

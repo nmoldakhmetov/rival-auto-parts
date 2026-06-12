@@ -7,6 +7,8 @@ export type PricingProduct = {
   id: string;
   category: string | null;
   brand: string | null;
+  // 1С is_final_price: the price is final — NO client discount may apply.
+  isFinalPrice?: boolean;
 };
 
 export type DiscountContext = {
@@ -71,11 +73,12 @@ export async function getDiscountContext(
     byCategory.size > 0 || byBrand.size > 0 || byProduct.size > 0;
   if (!hasTargeted) {
     const flat = Math.min(95, baseAll);
-    return { pctFor: () => flat };
+    return { pctFor: (p) => (p.isFinalPrice ? 0 : flat) };
   }
 
   return {
     pctFor: (p) => {
+      if (p.isFinalPrice) return 0; // финальная цена из 1С — без скидок
       let pct = baseAll;
       if (p.category) pct = Math.max(pct, byCategory.get(p.category) ?? 0);
       if (p.brand) pct = Math.max(pct, byBrand.get(p.brand) ?? 0);

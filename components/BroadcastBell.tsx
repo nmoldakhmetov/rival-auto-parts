@@ -1,18 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Bell,
   X,
   Megaphone,
   ChevronRight,
   ChevronLeft,
-  ShoppingCart,
-  ImageOff,
+  LayoutGrid,
 } from "lucide-react";
-import { useCart } from "@/store/cart";
-import { formatTenge, formatDiscount } from "@/lib/format";
-import CartQtySelector from "@/components/CartQtySelector";
 
 type BProduct = {
   id: string;
@@ -51,22 +48,13 @@ function fmtDate(iso: string) {
 }
 
 export default function BroadcastBell() {
+  const router = useRouter();
   const [items, setItems] = useState<Broadcast[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [discountDisplay, setDiscountDisplay] = useState("percent");
   const knownIdsRef = useRef<Set<string> | null>(null);
-
-  const cartItems = useCart((s) => s.items);
-  const add = useCart((s) => s.add);
-  const setCartQty = useCart((s) => s.setQty);
-  const removeFromCart = useCart((s) => s.remove);
-  const cartQtyById = useMemo(
-    () => new Map(cartItems.map((i) => [i.productId, i.qty])),
-    [cartItems]
-  );
 
   const load = useCallback(async () => {
     try {
@@ -74,7 +62,6 @@ export default function BroadcastBell() {
       const list: Broadcast[] = d.broadcasts ?? [];
       setItems(list);
       setUnread(d.unread ?? 0);
-      if (d.discountDisplay) setDiscountDisplay(d.discountDisplay);
       setLoaded(true);
 
       const known = knownIdsRef.current;
@@ -112,32 +99,30 @@ export default function BroadcastBell() {
     return () => clearInterval(t);
   }, [load]);
 
-  // Reading = opening a broadcast (not just the panel).
-  function openDetail(b: Broadcast) {
-    setDetailId(b.id);
-    if (!b.read) {
-      setItems((prev) =>
-        prev.map((x) => (x.id === b.id ? { ...x, read: true } : x))
-      );
-      setUnread((u) => Math.max(0, u - 1));
-      fetch("/api/broadcasts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: b.id }),
-      }).catch(() => {});
-    }
+  function markRead(b: Broadcast) {
+    if (b.read) return;
+    setItems((prev) =>
+      prev.map((x) => (x.id === b.id ? { ...x, read: true } : x))
+    );
+    setUnread((u) => Math.max(0, u - 1));
+    fetch("/api/broadcasts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: b.id }),
+    }).catch(() => {});
   }
 
-  function addToCart(p: BProduct) {
-    add({
-      productId: p.id,
-      sku: p.sku,
-      name: p.name,
-      price: p.price,
-      oldPrice: p.oldPrice,
-      discountPct: p.discountPct,
-      imageUrl: p.imageUrl,
-    });
+  // Reading = opening a broadcast. With products → the FULL catalog-style
+  // page (/broadcasts/[id]); text-only → a small detail view in the popup.
+  function openBroadcast(b: Broadcast) {
+    markRead(b);
+    if (b.products.length > 0) {
+      setOpen(false);
+      setDetailId(null);
+      router.push(`/broadcasts/${b.id}`);
+    } else {
+      setDetailId(b.id);
+    }
   }
 
   const detail = detailId ? items.find((b) => b.id === detailId) : null;
@@ -207,7 +192,7 @@ export default function BroadcastBell() {
             </div>
 
             {detail ? (
-              /* ── Detail: text + products as catalog cards ─────────── */
+              /* ── Detail (text-only broadcasts) ────────────────────── */
               <div className="max-h-[72vh] overflow-y-auto p-5">
                 <div className="mb-1 text-[11px] text-muted">
                   {fmtDate(detail.createdAt)}
@@ -215,91 +200,6 @@ export default function BroadcastBell() {
                 <p className="whitespace-pre-line text-sm leading-relaxed text-ink/90">
                   {detail.text}
                 </p>
-
-                {detail.products.length > 0 && (
-                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {detail.products.map((p) => {
-                      const qtyInCart = cartQtyById.get(p.id) ?? 0;
-                      const inCart = qtyInCart > 0;
-                      return (
-                        <div
-                          key={p.id}
-                          className="flex flex-col overflow-hidden rounded-xl border border-line bg-white shadow-sm transition-shadow hover:shadow-md"
-                        >
-                          <div className="relative flex h-32 items-center justify-center border-b border-line bg-gray-50 p-2">
-                            {p.imageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={`/api/image?u=${encodeURIComponent(
-                                  p.imageUrl
-                                )}`}
-                                alt={p.sku}
-                                loading="lazy"
-                                className="max-h-full max-w-full object-contain"
-                              />
-                            ) : (
-                              <ImageOff size={24} className="text-gray-300" />
-                            )}
-                            {p.discountPct > 0 && (
-                              <span className="absolute left-1.5 top-1.5 whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                                {formatDiscount(
-                                  discountDisplay,
-                                  p.discountPct,
-                                  p.oldPrice,
-                                  p.price
-                                )}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-1 flex-col p-2.5">
-                            <div className="text-[13px] font-bold text-ink">
-                              {p.sku}
-                            </div>
-                            <p
-                              className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted"
-                              title={p.fullName ?? undefined}
-                            >
-                              {p.fullName || p.name}
-                            </p>
-                            <div className="mt-auto pt-2">
-                              {p.oldPrice != null && (
-                                <div className="text-[11px] text-gray-400 line-through">
-                                  {formatTenge(p.oldPrice)}
-                                </div>
-                              )}
-                              <div className="mb-1.5 text-base font-extrabold text-ink">
-                                {p.price > 0
-                                  ? formatTenge(p.price)
-                                  : "Цена по запросу"}
-                              </div>
-                              {inCart ? (
-                                <CartQtySelector
-                                  qty={qtyInCart}
-                                  onSet={(n) => setCartQty(p.id, n)}
-                                  onRemove={() => removeFromCart(p.id)}
-                                />
-                              ) : p.totalQty === 0 ? (
-                                <button
-                                  disabled
-                                  className="btn h-9 w-full cursor-not-allowed whitespace-nowrap bg-gray-100 px-2 text-xs text-muted"
-                                >
-                                  Нет в наличии
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => addToCart(p)}
-                                  className="btn-accent h-9 w-full whitespace-nowrap px-2 text-xs"
-                                >
-                                  <ShoppingCart size={14} /> В корзину
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             ) : (
               /* ── List: titles only, click opens the broadcast ─────── */
@@ -307,7 +207,12 @@ export default function BroadcastBell() {
                 {items.map((b) => (
                   <button
                     key={b.id}
-                    onClick={() => openDetail(b)}
+                    onClick={() => openBroadcast(b)}
+                    title={
+                      b.products.length > 0
+                        ? "Откроется страницей с товарами — как каталог"
+                        : undefined
+                    }
                     className="group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-gray-50"
                   >
                     <span
@@ -338,10 +243,17 @@ export default function BroadcastBell() {
                           ` · товаров: ${b.products.length}`}
                       </span>
                     </span>
-                    <ChevronRight
-                      size={16}
-                      className="shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-accent"
-                    />
+                    {b.products.length > 0 ? (
+                      <LayoutGrid
+                        size={15}
+                        className="shrink-0 text-gray-300 transition-colors group-hover:text-accent"
+                      />
+                    ) : (
+                      <ChevronRight
+                        size={16}
+                        className="shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-accent"
+                      />
+                    )}
                   </button>
                 ))}
               </div>

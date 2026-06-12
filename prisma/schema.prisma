@@ -103,6 +103,7 @@ model Product {
   oldPrice Decimal? @db.Decimal(12, 2) // цена до последнего изменения (скидка от снижения)
   priceDropAt DateTime? // когда зафиксировано снижение цены (скидка живёт N дней)
   newUntil    DateTime? // авто-значок «новинка» до этой даты (ставится при появлении в 1С)
+  isFinalPrice Boolean @default(false) // 1С is_final_price: цена финальная, скидки клиента не применяются
   imageUrl String?
 
   model        String? // модель авто (выводится из применяемости)

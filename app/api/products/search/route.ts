@@ -27,8 +27,38 @@ export async function GET(req: NextRequest) {
   const maxPrice = parseFloat(sp.get("maxPrice") ?? "");
   const inStock = sp.get("inStock") === "1";
   const sort = sp.get("sort") ?? ""; // "" | price_asc | price_desc
+  const broadcastId = (sp.get("broadcast") ?? "").trim(); // ограничить выдачу товарами рассылки
   const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
   const PAGE_SIZE = 50;
+
+  // Broadcast scope: the full catalog experience limited to one broadcast's
+  // products. CLIENTs may only open broadcasts addressed to them (or global).
+  if (broadcastId) {
+    const b = await prisma.broadcast.findUnique({
+      where: { id: broadcastId },
+      select: {
+        isGlobal: true,
+        recipients: {
+          where: { userId: session.sub },
+          select: { id: true },
+        },
+      },
+    });
+    const visible =
+      !!b &&
+      (session.role !== "CLIENT" || b.isGlobal || b.recipients.length > 0);
+    if (!visible) {
+      return NextResponse.json({
+        rows: [],
+        total: 0,
+        page: 1,
+        pageSize: PAGE_SIZE,
+        totalPages: 1,
+        shown: 0,
+        discountDisplay: "percent",
+      });
+    }
+  }
 
   // Stock visibility: CLIENT sees only granted warehouses; staff see all.
   // Both lookups are cached for 30 s — they rarely change but used to cost
@@ -102,6 +132,9 @@ export async function GET(req: NextRequest) {
         },
       },
     });
+  }
+  if (broadcastId) {
+    and.push({ broadcasts: { some: { broadcastId } } });
   }
   // Never show products from hidden technical 1С folders (Unused / Архив папки).
   and.push(NOT_HIDDEN_CATEGORY);
