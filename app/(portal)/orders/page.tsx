@@ -4,6 +4,7 @@ import { ClipboardList } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatTenge, formatDateTime } from "@/lib/format";
+import RepeatOrderButton from "@/components/RepeatOrderButton";
 import type { OrderStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -72,11 +73,17 @@ export default async function OrdersPage() {
                     </span>
                     <span className={`badge border ${s.cls}`}>{s.label}</span>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-muted">
+                  <div className="flex items-center gap-3 text-xs text-muted">
                     <span>{formatDateTime(o.createdAt)}</span>
                     <span className="text-sm font-bold text-ink">
                       {formatTenge(Number(o.total))}
                     </span>
+                    <RepeatOrderButton
+                      items={o.items.map((i) => ({
+                        productId: i.productId,
+                        qty: i.qty,
+                      }))}
+                    />
                   </div>
                 </div>
                 <table className="data-table">

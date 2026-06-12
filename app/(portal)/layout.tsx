@@ -6,6 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import CartSync from "@/components/CartSync";
 import BlockOverlay from "@/components/BlockOverlay";
+import Toasts from "@/components/Toasts";
 
 export default async function PortalLayout({
   children,
@@ -59,6 +60,7 @@ export default async function PortalLayout({
       {blocked && (
         <BlockOverlay message={blocked.message} manager={blocked.manager} />
       )}
+      <Toasts />
     </div>
   );
 }
