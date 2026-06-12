@@ -28,6 +28,7 @@ import { useSearch } from "@/store/search";
 import { formatTenge, formatNum, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
 import CartQtySelector from "@/components/CartQtySelector";
+import { toast } from "@/store/toast";
 import type { CatalogRow } from "@/lib/types";
 import type { Role } from "@/lib/jwt";
 import CategoryTree, { type CatNode } from "@/components/CategoryTree";
@@ -337,12 +338,16 @@ export default function Catalog({
   }, [role]);
 
   function toggleFavorite(id: string) {
+    const adding = !favorites.has(id);
     setFavorites((s) => {
       const next = new Set(s);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    toast.success(
+      adding ? "Добавлено в избранное" : "Убрано из избранного"
+    );
     fetch("/api/favorites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

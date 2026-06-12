@@ -8,6 +8,7 @@ import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
 import type { CatalogRow } from "@/lib/types";
 import CartQtySelector from "@/components/CartQtySelector";
+import { toast } from "@/store/toast";
 
 // The client's saved products, rendered as catalog-style cards with live
 // pricing and per-warehouse stock. The heart removes an item from the list.
@@ -38,6 +39,7 @@ export default function FavoritesClient() {
 
   function removeFavorite(id: string) {
     setRows((rs) => rs.filter((r) => r.id !== id));
+    toast.success("Убрано из избранного");
     fetch("/api/favorites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
