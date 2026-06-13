@@ -118,7 +118,19 @@ export async function GET(req: NextRequest) {
     and.push({ OR: or });
   }
   if (make) and.push({ brand: make });
-  if (model) and.push({ model });
+  // Model filter = plain text search in the applicability (full_name), exactly
+  // like typing it into the search box: picking «Sonata» must return every
+  // product whose full_name mentions sonata (smart match incl. separators).
+  if (model) {
+    const normModel = normalizeSmart(model);
+    const modelOr: Prisma.ProductWhereInput[] = [
+      { fullName: { contains: model, mode: "insensitive" } },
+    ];
+    if (normModel.length >= 2) {
+      modelOr.push({ fullNameNorm: { contains: normModel } });
+    }
+    and.push({ OR: modelOr });
+  }
   if (category) and.push({ category });
   else if (categoryGroup) and.push({ category: { startsWith: categoryGroup } });
   if (Number.isFinite(minPrice)) and.push({ price: { gte: minPrice } });
