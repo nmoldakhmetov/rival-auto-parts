@@ -1,6 +1,7 @@
 import { Search } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/format";
+import { getSession } from "@/lib/auth";
 import ClientSearchFilter from "@/components/admin/ClientSearchFilter";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,9 @@ export const metadata = { title: "История поиска — Админ-п�
 
 const roleLabel: Record<string, string> = {
   ADMIN: "Админ",
+  RA: "Rival Auto",
   MANAGER: "Менеджер",
+  ACCOUNTANT: "Бухгалтер",
   CLIENT: "Клиент",
 };
 
@@ -17,16 +20,21 @@ export default async function SearchLogsPage({
 }: {
   searchParams: { client?: string };
 }) {
+  const session = await getSession();
   const clientId = searchParams.client || "";
+  const mgrId = session?.role === "MANAGER" ? session.sub : null;
 
   const [clients, logs] = await Promise.all([
     prisma.user.findMany({
-      where: { role: "CLIENT" },
+      where: { role: "CLIENT", ...(mgrId ? { managerId: mgrId } : {}) },
       select: { id: true, fullName: true, login: true },
       orderBy: { fullName: "asc" },
     }),
     prisma.searchLog.findMany({
-      where: clientId ? { userId: clientId } : {},
+      where: {
+        ...(clientId ? { userId: clientId } : {}),
+        ...(mgrId ? { user: { managerId: mgrId } } : {}),
+      },
       orderBy: { createdAt: "desc" },
       take: 300,
       include: { user: { select: { fullName: true, login: true, role: true } } },

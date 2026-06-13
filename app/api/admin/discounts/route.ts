@@ -3,6 +3,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizeRule, type RuleBody } from "@/lib/discount-rules";
 import { invalidatePrefix } from "@/lib/cache";
+import { getSession } from "@/lib/auth";
+import { managerOwnsClient } from "@/lib/admin-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +61,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
   const { productIds, ...data } = result.data;
+
+  // A manager may only create per-client discounts for their OWN clients
+  // (no «всем клиентам» / userId=null).
+  const session = await getSession();
+  if (session?.role === "MANAGER") {
+    if (!data.userId || !(await managerOwnsClient(session, data.userId))) {
+      return NextResponse.json(
+        { error: "Можно назначать скидку только своим клиентам" },
+        { status: 403 }
+      );
+    }
+  }
 
   try {
     const rule = await prisma.discountRule.create({

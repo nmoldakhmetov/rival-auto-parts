@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma, OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
+import { managerUserFilter } from "@/lib/admin-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,10 @@ const STATUSES = new Set<string>([
 ]);
 
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const sp = req.nextUrl.searchParams;
   const status = (sp.get("status") ?? "").trim();
   const q = (sp.get("q") ?? "").trim();
@@ -23,18 +29,19 @@ export async function GET(req: NextRequest) {
 
   const and: Prisma.OrderWhereInput[] = [];
   if (STATUSES.has(status)) and.push({ status: status as OrderStatus });
+
+  // Manager → only their clients' orders; merge with the text search.
+  const mgr = managerUserFilter(session);
+  const userFilter: Prisma.UserWhereInput = { ...(mgr ?? {}) };
   if (q) {
-    and.push({
-      user: {
-        is: {
-          OR: [
-            { fullName: { contains: q, mode: "insensitive" } },
-            { login: { contains: q, mode: "insensitive" } },
-            { email: { contains: q, mode: "insensitive" } },
-          ],
-        },
-      },
-    });
+    userFilter.OR = [
+      { fullName: { contains: q, mode: "insensitive" } },
+      { login: { contains: q, mode: "insensitive" } },
+      { email: { contains: q, mode: "insensitive" } },
+    ];
+  }
+  if (Object.keys(userFilter).length > 0) {
+    and.push({ user: { is: userFilter } });
   }
   const where: Prisma.OrderWhereInput = and.length ? { AND: and } : {};
 

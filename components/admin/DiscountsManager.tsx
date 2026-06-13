@@ -58,7 +58,13 @@ const TARGET_META: Record<
   BRAND: { label: "На марку/бренд", Icon: Car },
 };
 
-export default function DiscountsManager({ clients }: { clients: Client[] }) {
+export default function DiscountsManager({
+  clients,
+  ownClientsOnly = false,
+}: {
+  clients: Client[];
+  ownClientsOnly?: boolean;
+}) {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [makes, setMakes] = useState<string[]>([]);
@@ -68,7 +74,7 @@ export default function DiscountsManager({ clients }: { clients: Client[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [percent, setPercent] = useState("10");
-  const [toAll, setToAll] = useState(true); // true = всем клиентам
+  const [toAll, setToAll] = useState(!ownClientsOnly); // true = всем клиентам
   const [clientId, setClientId] = useState("");
   const [target, setTarget] = useState<Target>("ALL");
   const [category, setCategory] = useState("");
@@ -135,7 +141,7 @@ export default function DiscountsManager({ clients }: { clients: Client[] }) {
     setEditingId(null);
     setName("");
     setPercent("10");
-    setToAll(true);
+    setToAll(!ownClientsOnly);
     setClientId("");
     setTarget("ALL");
     setCategory("");
@@ -324,30 +330,32 @@ export default function DiscountsManager({ clients }: { clients: Client[] }) {
             <label className="mb-1.5 block text-xs font-medium text-muted">
               Кому
             </label>
-            <div className="mb-2 flex gap-2">
-              <button
-                onClick={() => setToAll(true)}
-                className={cx(
-                  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-                  toAll
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-line text-muted hover:border-accent/40"
-                )}
-              >
-                <Globe size={14} /> Всем клиентам
-              </button>
-              <button
-                onClick={() => setToAll(false)}
-                className={cx(
-                  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-                  !toAll
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-line text-muted hover:border-accent/40"
-                )}
-              >
-                <Users size={14} /> Конкретному клиенту
-              </button>
-            </div>
+            {!ownClientsOnly && (
+              <div className="mb-2 flex gap-2">
+                <button
+                  onClick={() => setToAll(true)}
+                  className={cx(
+                    "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                    toAll
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-line text-muted hover:border-accent/40"
+                  )}
+                >
+                  <Globe size={14} /> Всем клиентам
+                </button>
+                <button
+                  onClick={() => setToAll(false)}
+                  className={cx(
+                    "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                    !toAll
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-line text-muted hover:border-accent/40"
+                  )}
+                >
+                  <Users size={14} /> Конкретному клиенту
+                </button>
+              </div>
+            )}
             {!toAll && (
               <select
                 value={clientId}

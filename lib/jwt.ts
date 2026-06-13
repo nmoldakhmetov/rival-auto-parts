@@ -3,7 +3,7 @@ import { SignJWT, jwtVerify } from "jose";
 // Edge-safe session helpers (used by both middleware and route handlers).
 // No Node-only APIs here so this module can run in the Edge runtime.
 
-export type Role = "ADMIN" | "MANAGER" | "CLIENT";
+export type Role = "ADMIN" | "RA" | "MANAGER" | "ACCOUNTANT" | "CLIENT";
 
 export type SessionPayload = {
   sub: string; // user id

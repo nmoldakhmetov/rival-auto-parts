@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
+import { managerOwnsClients } from "@/lib/admin-scope";
 
 export const dynamic = "force-dynamic";
 
-// Access restricted to ADMIN by middleware (/api/admin/*).
+// Access restricted by middleware (/api/admin/* per role).
 
 // GET — all broadcasts (newest first) with products + read stats.
 export async function GET() {
@@ -88,6 +90,17 @@ export async function POST(req: NextRequest) {
       { error: "Выберите получателей или включите «всем клиентам»" },
       { status: 400 }
     );
+  }
+
+  // A manager may only message their own clients (never «всем клиентам»).
+  const session = await getSession();
+  if (session?.role === "MANAGER") {
+    if (isGlobal || !(await managerOwnsClients(session, userIds))) {
+      return NextResponse.json(
+        { error: "Рассылку можно отправлять только своим клиентам" },
+        { status: 403 }
+      );
+    }
   }
 
   const broadcast = await prisma.broadcast.create({

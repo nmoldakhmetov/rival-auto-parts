@@ -45,7 +45,13 @@ type BroadcastItem = {
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
-export default function BroadcastsManager({ clients }: { clients: Client[] }) {
+export default function BroadcastsManager({
+  clients,
+  ownClientsOnly = false,
+}: {
+  clients: Client[];
+  ownClientsOnly?: boolean;
+}) {
   const [list, setList] = useState<BroadcastItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +59,7 @@ export default function BroadcastsManager({ clients }: { clients: Client[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
-  const [isGlobal, setIsGlobal] = useState(true);
+  const [isGlobal, setIsGlobal] = useState(!ownClientsOnly);
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [clientIds, setClientIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -115,7 +121,7 @@ export default function BroadcastsManager({ clients }: { clients: Client[] }) {
     setEditingId(null);
     setTitle("");
     setText("");
-    setIsGlobal(true);
+    setIsGlobal(!ownClientsOnly);
     setProducts([]);
     setClientIds(new Set());
     setPq("");
@@ -355,31 +361,33 @@ export default function BroadcastsManager({ clients }: { clients: Client[] }) {
             <label className="mb-1.5 block text-xs font-medium text-muted">
               Получатели
             </label>
-            <div className="mb-2 flex gap-2">
-              <button
-                onClick={() => setIsGlobal(true)}
-                className={cx(
-                  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-                  isGlobal
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-line text-muted hover:border-accent/40"
-                )}
-              >
-                <Globe size={14} /> Всем клиентам
-              </button>
-              <button
-                onClick={() => setIsGlobal(false)}
-                className={cx(
-                  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-                  !isGlobal
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-line text-muted hover:border-accent/40"
-                )}
-              >
-                <Users size={14} /> Выбрать клиентов
-                {!isGlobal && clientIds.size > 0 && ` (${clientIds.size})`}
-              </button>
-            </div>
+            {!ownClientsOnly && (
+              <div className="mb-2 flex gap-2">
+                <button
+                  onClick={() => setIsGlobal(true)}
+                  className={cx(
+                    "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                    isGlobal
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-line text-muted hover:border-accent/40"
+                  )}
+                >
+                  <Globe size={14} /> Всем клиентам
+                </button>
+                <button
+                  onClick={() => setIsGlobal(false)}
+                  className={cx(
+                    "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                    !isGlobal
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-line text-muted hover:border-accent/40"
+                  )}
+                >
+                  <Users size={14} /> Выбрать клиентов
+                  {!isGlobal && clientIds.size > 0 && ` (${clientIds.size})`}
+                </button>
+              </div>
+            )}
 
             {!isGlobal && (
               <div className="rounded-lg border border-line">

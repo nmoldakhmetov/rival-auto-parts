@@ -27,6 +27,7 @@ import { useCart } from "@/store/cart";
 import { useSearch } from "@/store/search";
 import { formatTenge, formatNum, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
+import { canEditCatalog } from "@/lib/permissions";
 import CartQtySelector from "@/components/CartQtySelector";
 import { toast } from "@/store/toast";
 import type { CatalogRow } from "@/lib/types";
@@ -493,7 +494,7 @@ export default function Catalog({
 
   const pageList = buildPageList(page, totalPages);
   const showActions = role === "CLIENT";
-  const showAdminControls = role === "ADMIN";
+  const showAdminControls = canEditCatalog(role);
   const hasFilters = !!(
     make ||
     model ||

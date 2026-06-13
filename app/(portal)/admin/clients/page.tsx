@@ -1,18 +1,24 @@
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 import ClientsManager from "@/components/admin/ClientsManager";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Клиенты — Админ-панель" };
 
 export default async function AdminClientsPage() {
+  const session = await getSession();
+  const mgrId = session?.role === "MANAGER" ? session.sub : null;
+
   const [clientsRaw, managers, warehouses] = await Promise.all([
     prisma.user.findMany({
-      where: { role: "CLIENT" },
+      // Manager sees only their own clients.
+      where: { role: "CLIENT", ...(mgrId ? { managerId: mgrId } : {}) },
       include: { warehouseAccess: { select: { warehouseId: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.user.findMany({
-      where: { role: "MANAGER" },
+      // A manager may only (re)assign clients to themselves.
+      where: { role: "MANAGER", ...(mgrId ? { id: mgrId } : {}) },
       select: { id: true, fullName: true },
       orderBy: { fullName: "asc" },
     }),
