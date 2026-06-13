@@ -7,11 +7,21 @@ import {
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatNum } from "@/lib/format";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Статистика — Админ-панель" };
 
 export default async function StatsPage() {
+  const session = await getSession();
+  // Manager → statistics limited to their own clients' activity.
+  const mgrId = session?.role === "MANAGER" ? session.sub : null;
+  const orderItemScope = mgrId
+    ? { order: { user: { managerId: mgrId } } }
+    : {};
+  const userScope = mgrId ? { user: { managerId: mgrId } } : {};
+  const orderScope = mgrId ? { user: { managerId: mgrId } } : {};
+
   const [
     boughtRaw,
     searchedRaw,
@@ -22,25 +32,28 @@ export default async function StatsPage() {
   ] = await Promise.all([
     prisma.orderItem.groupBy({
       by: ["sku", "name"],
+      where: orderItemScope,
       _sum: { qty: true },
       orderBy: { _sum: { qty: "desc" } },
       take: 15,
     }),
     prisma.searchLog.groupBy({
       by: ["query"],
+      where: userScope,
       _count: { _all: true },
       orderBy: { _count: { query: "desc" } },
       take: 15,
     }),
     prisma.productView.groupBy({
       by: ["productId"],
+      where: userScope,
       _count: { _all: true },
       orderBy: { _count: { productId: "desc" } },
       take: 15,
     }),
-    prisma.order.count(),
-    prisma.searchLog.count(),
-    prisma.productView.count(),
+    prisma.order.count({ where: orderScope }),
+    prisma.searchLog.count({ where: userScope }),
+    prisma.productView.count({ where: userScope }),
   ]);
 
   const viewedProducts = await prisma.product.findMany({

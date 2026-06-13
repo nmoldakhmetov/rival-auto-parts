@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { hashPassword } from "@/lib/auth";
+import { hashPassword, getSession } from "@/lib/auth";
 
 // Access is restricted to ADMIN by middleware (/api/admin/*).
 // Creates a CLIENT or MANAGER account (closed registration → admin-driven).
@@ -26,7 +26,15 @@ export async function POST(req: NextRequest) {
   const login = body.login?.trim();
   const password = body.password ?? "";
   const fullName = body.fullName?.trim();
-  const role = body.role === "MANAGER" ? "MANAGER" : "CLIENT";
+  // Only ADMIN/RA may create staff accounts; managers create clients only.
+  const session = await getSession();
+  const wantsManager =
+    body.role === "MANAGER" &&
+    (session?.role === "ADMIN" || session?.role === "RA");
+  const role = wantsManager ? "MANAGER" : "CLIENT";
+  // A manager's new client is auto-assigned to them.
+  const managerId =
+    role === "CLIENT" && session?.role === "MANAGER" ? session.sub : null;
 
   if (!login || !password || !fullName) {
     return NextResponse.json(
@@ -53,6 +61,7 @@ export async function POST(req: NextRequest) {
         address: body.address?.trim() || null,
         city: body.city?.trim() || null,
         comment: body.comment?.trim() || null,
+        managerId,
       },
     });
     return NextResponse.json({

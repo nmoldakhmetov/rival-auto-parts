@@ -1,6 +1,7 @@
 import { Heart, ShoppingCart, User } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatTenge } from "@/lib/format";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Избранное и корзины — Админ-панель" };
@@ -8,8 +9,14 @@ export const metadata = { title: "Избранное и корзины — Ад�
 type UserLite = { id: string; fullName: string; login: string };
 
 export default async function ActivityPage() {
+  const session = await getSession();
+  // Manager → only their own clients' carts / favorites.
+  const userScope =
+    session?.role === "MANAGER" ? { user: { managerId: session.sub } } : {};
+
   const [cartItems, favItems] = await Promise.all([
     prisma.savedCartItem.findMany({
+      where: userScope,
       include: {
         user: { select: { id: true, fullName: true, login: true } },
         product: { select: { sku: true, name: true, price: true } },
@@ -17,6 +24,7 @@ export default async function ActivityPage() {
       orderBy: { updatedAt: "desc" },
     }),
     prisma.favorite.findMany({
+      where: userScope,
       include: {
         user: { select: { id: true, fullName: true, login: true } },
         product: { select: { sku: true, name: true } },

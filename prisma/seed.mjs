@@ -48,6 +48,28 @@ async function main() {
     },
   });
 
+  // 3b) RA (как админ, без «Настроек») и бухгалтер — видят всех клиентов
+  await prisma.user.upsert({
+    where: { login: "ra" },
+    update: { role: "RA" },
+    create: {
+      login: "ra",
+      role: "RA",
+      fullName: "Rival Auto",
+      passwordHash: hash("ra123"),
+    },
+  });
+  await prisma.user.upsert({
+    where: { login: "accountant" },
+    update: { role: "ACCOUNTANT" },
+    create: {
+      login: "accountant",
+      role: "ACCOUNTANT",
+      fullName: "Бухгалтер",
+      passwordHash: hash("accountant123"),
+    },
+  });
+
   // 4) Client assigned to the manager
   const client = await prisma.user.upsert({
     where: { login: "client" },
@@ -72,7 +94,9 @@ async function main() {
   });
 
   console.log("✓ Seed complete (accounts + warehouse access).");
-  console.log("  users: admin/admin123, manager/manager123, client/client123");
+  console.log(
+    "  users: admin/admin123, ra/ra123, accountant/accountant123, manager/manager123, client/client123"
+  );
   console.log("  Запустите синхронизацию с 1С, чтобы наполнить каталог.");
 }
 

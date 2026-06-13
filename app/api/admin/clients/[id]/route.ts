@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { invalidatePrefix } from "@/lib/cache";
+import { getSession } from "@/lib/auth";
+import { managerOwnsClient } from "@/lib/admin-scope";
 
 // PATCH: update a client — manager, active state, balance, city, comment.
 export async function PATCH(
@@ -42,6 +44,12 @@ export async function PATCH(
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Нечего обновлять" }, { status: 400 });
+  }
+
+  // A manager may only edit their own clients.
+  const session = await getSession();
+  if (session && !(await managerOwnsClient(session, params.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Guard: if assigning a manager, make sure the target really is a MANAGER.

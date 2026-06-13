@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma, ReturnStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
+import { managerUserFilter } from "@/lib/admin-scope";
 
 export const dynamic = "force-dynamic";
 
 const STATUSES = new Set<string>(["NEW", "PROCESSING", "ACCEPTED", "REJECTED"]);
 
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const sp = req.nextUrl.searchParams;
   const status = (sp.get("status") ?? "").trim();
   const q = (sp.get("q") ?? "").trim();
@@ -15,6 +21,9 @@ export async function GET(req: NextRequest) {
 
   const and: Prisma.ReturnWhereInput[] = [];
   if (STATUSES.has(status)) and.push({ status: status as ReturnStatus });
+  // Manager → only returns from their own clients.
+  const mgr = managerUserFilter(session);
+  if (mgr) and.push({ user: { is: mgr } });
   if (q) {
     and.push({
       OR: [

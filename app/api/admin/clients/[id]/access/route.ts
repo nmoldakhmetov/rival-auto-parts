@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { invalidatePrefix } from "@/lib/cache";
+import { getSession } from "@/lib/auth";
+import { managerOwnsClient } from "@/lib/admin-scope";
 
 // PUT: replace the full set of warehouses a client may see stock for.
 export async function PUT(
@@ -12,6 +14,11 @@ export async function PUT(
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
+  }
+
+  const session = await getSession();
+  if (session && !(await managerOwnsClient(session, params.id))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const ids = Array.isArray(body.warehouseIds)

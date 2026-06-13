@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/jwt";
+import { canAccessAdminPath, isStaff, landingSection } from "@/lib/permissions";
 
 // Paths reachable without a session.
 const PUBLIC_PATHS = ["/login", "/api/auth/login"];
@@ -37,16 +38,23 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Admin area requires ADMIN role.
+  // Admin area: per-role, per-section access (see lib/permissions.ts).
   const adminArea =
     pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
-  if (adminArea && session.role !== "ADMIN") {
+  if (adminArea && !canAccessAdminPath(session.role, pathname)) {
     if (pathname.startsWith("/api")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const url = req.nextUrl.clone();
-    url.pathname = "/";
     url.search = "";
+    // Staff who hit a forbidden section → land on a section they DO have;
+    // clients → home.
+    if (isStaff(session.role)) {
+      const sec = landingSection(session.role);
+      url.pathname = sec === "overview" ? "/admin" : `/admin/${sec}`;
+    } else {
+      url.pathname = "/";
+    }
     return NextResponse.redirect(url);
   }
 

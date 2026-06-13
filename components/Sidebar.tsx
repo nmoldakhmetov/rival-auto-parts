@@ -26,14 +26,41 @@ import {
 import { useCart } from "@/store/cart";
 import { formatTenge } from "@/lib/format";
 import type { Role } from "@/lib/jwt";
+import {
+  canAccessSection,
+  isStaff,
+  type AdminSection,
+} from "@/lib/permissions";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
 const roleLabel: Record<Role, string> = {
   ADMIN: "Администратор",
+  RA: "Rival Auto",
   MANAGER: "Менеджер",
+  ACCOUNTANT: "Бухгалтер",
   CLIENT: "Клиент",
 };
+
+// Admin nav, rendered per-role via canAccessSection (see lib/permissions.ts).
+const ADMIN_NAV: {
+  section: AdminSection;
+  href: string;
+  label: string;
+  Icon: typeof LayoutGrid;
+}[] = [
+  { section: "overview", href: "/admin", label: "Обзор", Icon: Box },
+  { section: "orders", href: "/admin/orders", label: "Заказы", Icon: Receipt },
+  { section: "returns", href: "/admin/returns", label: "Возвраты", Icon: Undo2 },
+  { section: "clients", href: "/admin/clients", label: "Клиенты", Icon: Users },
+  { section: "discounts", href: "/admin/discounts", label: "Скидки", Icon: Percent },
+  { section: "broadcasts", href: "/admin/broadcasts", label: "Рассылки", Icon: Megaphone },
+  { section: "analogs", href: "/admin/analogs", label: "Аналоги", Icon: Replace },
+  { section: "stats", href: "/admin/stats", label: "Статистика", Icon: BarChart3 },
+  { section: "activity", href: "/admin/activity", label: "Избранное и корзины", Icon: Heart },
+  { section: "search-logs", href: "/admin/search-logs", label: "История поиска", Icon: Search },
+  { section: "settings", href: "/admin/settings", label: "Настройки", Icon: Settings },
+];
 
 export default function Sidebar({
   role,
@@ -127,26 +154,21 @@ export default function Sidebar({
           </>
         )}
 
-        {role === "ADMIN" && (
+        {isStaff(role) && (
           <>
             <div className="px-5 pb-1 pt-4 text-[10px] uppercase tracking-wider text-white/30">
               Администрирование
             </div>
-            <NavLink href="/admin" label="Обзор" Icon={Box} />
-            <NavLink href="/admin/orders" label="Заказы" Icon={Receipt} />
-            <NavLink href="/admin/returns" label="Возвраты" Icon={Undo2} />
-            <NavLink href="/admin/clients" label="Клиенты" Icon={Users} />
-            <NavLink href="/admin/discounts" label="Скидки" Icon={Percent} />
-            <NavLink href="/admin/broadcasts" label="Рассылки" Icon={Megaphone} />
-            <NavLink href="/admin/analogs" label="Аналоги" Icon={Replace} />
-            <NavLink href="/admin/stats" label="Статистика" Icon={BarChart3} />
-            <NavLink href="/admin/activity" label="Избранное и корзины" Icon={Heart} />
-            <NavLink
-              href="/admin/search-logs"
-              label="История поиска"
-              Icon={Search}
-            />
-            <NavLink href="/admin/settings" label="Настройки" Icon={Settings} />
+            {ADMIN_NAV.filter((n) => canAccessSection(role, n.section)).map(
+              (n) => (
+                <NavLink
+                  key={n.section}
+                  href={n.href}
+                  label={n.label}
+                  Icon={n.Icon}
+                />
+              )
+            )}
           </>
         )}
       </nav>

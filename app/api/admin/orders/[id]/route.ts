@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
+import { managerOwnsClient } from "@/lib/admin-scope";
 
 const STATUSES = new Set<string>([
   "NEW",
@@ -25,9 +27,13 @@ export async function PATCH(
     return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
   }
 
+  const session = await getSession();
   const order = await prisma.order.findUnique({ where: { id: params.id } });
   if (!order) {
     return NextResponse.json({ error: "Заказ не найден" }, { status: 404 });
+  }
+  if (session && !(await managerOwnsClient(session, order.userId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const data: { status?: OrderStatus; paid?: number } = {};
