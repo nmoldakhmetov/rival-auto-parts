@@ -3,8 +3,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, getSession } from "@/lib/auth";
 
-// Access is restricted to ADMIN by middleware (/api/admin/*).
-// Creates a CLIENT or MANAGER account (closed registration → admin-driven).
+// Reachable by the "clients" section roles (ADMIN/RA/MANAGER/ACCOUNTANT) via
+// middleware, but ACCOUNTANT is read-only here — only ADMIN/RA/MANAGER may
+// create accounts. Creates a CLIENT or MANAGER (closed registration).
 export async function POST(req: NextRequest) {
   let body: {
     login?: string;
@@ -28,10 +29,20 @@ export async function POST(req: NextRequest) {
   const fullName = body.fullName?.trim();
   // Only ADMIN/RA may create staff accounts; managers create clients only.
   const session = await getSession();
-  const wantsManager =
-    body.role === "MANAGER" &&
-    (session?.role === "ADMIN" || session?.role === "RA");
-  const role = wantsManager ? "MANAGER" : "CLIENT";
+  // ACCOUNTANT has the clients tab but is read-only — it may not create users.
+  if (session && session.role === "ACCOUNTANT") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  // Only ADMIN/RA may create staff (MANAGER / ACCOUNTANT / RA). Everyone else
+  // who reaches this route (a MANAGER) can only create CLIENT accounts.
+  const isOwner = session?.role === "ADMIN" || session?.role === "RA";
+  const role: "CLIENT" | "MANAGER" | "ACCOUNTANT" | "RA" =
+    isOwner &&
+    (body.role === "MANAGER" ||
+      body.role === "ACCOUNTANT" ||
+      body.role === "RA")
+      ? body.role
+      : "CLIENT";
   // A manager's new client is auto-assigned to them.
   const managerId =
     role === "CLIENT" && session?.role === "MANAGER" ? session.sub : null;

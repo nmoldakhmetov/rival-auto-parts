@@ -15,6 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { formatTenge, formatDateTime } from "@/lib/format";
+import type { Role } from "@/lib/jwt";
 
 type ClientRow = {
   id: string;
@@ -34,6 +35,23 @@ type ClientRow = {
 };
 type ManagerOpt = { id: string; fullName: string };
 type WarehouseOpt = { id: string; name: string };
+type StaffRoleT = "MANAGER" | "ACCOUNTANT" | "RA";
+type StaffRow = {
+  id: string;
+  login: string;
+  fullName: string;
+  email: string | null;
+  phone: string | null;
+  role: StaffRoleT;
+  isActive: boolean;
+  createdAt: string;
+};
+
+const STAFF_ROLE_LABEL: Record<StaffRoleT, string> = {
+  MANAGER: "Менеджер",
+  ACCOUNTANT: "Бухгалтер",
+  RA: "Rival Auto (RA)",
+};
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -197,9 +215,12 @@ function AccessEditor({
 function CreateUserModal({
   onClose,
   onCreated,
+  allowStaff,
 }: {
   onClose: () => void;
   onCreated: (user: ClientRow & { role: string }) => void;
+  // Only ADMIN/RA may create staff (MANAGER/ACCOUNTANT/RA); others → clients only.
+  allowStaff: boolean;
 }) {
   const [form, setForm] = useState({
     role: "CLIENT",
@@ -262,9 +283,12 @@ function CreateUserModal({
                 value={form.role}
                 onChange={(e) => set("role", e.target.value)}
                 className="input"
+                disabled={!allowStaff}
               >
                 <option value="CLIENT">Клиент</option>
-                <option value="MANAGER">Менеджер</option>
+                {allowStaff && <option value="MANAGER">Менеджер</option>}
+                {allowStaff && <option value="ACCOUNTANT">Бухгалтер</option>}
+                {allowStaff && <option value="RA">RA (Rival Auto)</option>}
               </select>
             </Field>
             <Field label="Логин *">
@@ -378,20 +402,117 @@ function Field({
   );
 }
 
+// ─── Staff table (managers / accountants / RA) ──────────────────────────────
+function StaffTable({
+  rows,
+  onToggleActive,
+}: {
+  rows: StaffRow[];
+  onToggleActive: (s: StaffRow) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-line bg-white">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Сотрудник</th>
+            <th>Контакты</th>
+            <th className="w-44">Роль</th>
+            <th className="w-24 text-center">Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={4} className="py-12 text-center text-sm text-muted">
+                Пока никого.
+              </td>
+            </tr>
+          )}
+          {rows.map((s) => (
+            <tr key={s.id}>
+              <td>
+                <div className="font-semibold text-ink">{s.fullName}</div>
+                <div className="text-[11px] text-muted">
+                  {s.login} · ID {s.id.slice(-6)}
+                </div>
+                <div className="text-[10px] text-gray-400">
+                  рег. {formatDateTime(s.createdAt)}
+                </div>
+              </td>
+              <td className="text-[11px] text-muted">
+                {s.email && <div>{s.email}</div>}
+                {s.phone && <div>{s.phone}</div>}
+                {!s.email && !s.phone && <span>—</span>}
+              </td>
+              <td>
+                <span className="badge border border-line bg-gray-50 text-ink">
+                  {STAFF_ROLE_LABEL[s.role]}
+                </span>
+              </td>
+              <td className="text-center">
+                <button
+                  onClick={() => onToggleActive(s)}
+                  className={cx(
+                    "badge border",
+                    s.isActive
+                      ? "border-green-200 bg-green-50 text-green-700"
+                      : "border-line bg-gray-100 text-muted"
+                  )}
+                >
+                  {s.isActive ? (
+                    <>
+                      <ShieldCheck size={12} className="mr-1" /> Активен
+                    </>
+                  ) : (
+                    <>
+                      <ShieldOff size={12} className="mr-1" /> Блок
+                    </>
+                  )}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────
+type Tab = "CLIENT" | StaffRoleT;
+
 export default function ClientsManager({
   initialClients,
   initialManagers,
+  initialStaff,
   warehouses,
+  viewerRole,
 }: {
   initialClients: ClientRow[];
   initialManagers: ManagerOpt[];
+  initialStaff: StaffRow[];
   warehouses: WarehouseOpt[];
+  viewerRole: Role;
 }) {
   const [clients, setClients] = useState(initialClients);
   const [managers, setManagers] = useState(initialManagers);
+  const [staff, setStaff] = useState(initialStaff);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [tab, setTab] = useState<Tab>("CLIENT");
+  // ACCOUNTANT has the clients tab but is read-only (no account creation).
+  const canCreate = viewerRole !== "ACCOUNTANT";
+  // Only ADMIN/RA may create staff (MANAGER/ACCOUNTANT/RA) and see the staff tabs.
+  const isOwner = viewerRole === "ADMIN" || viewerRole === "RA";
+
+  const staffByRole = (r: StaffRoleT) => staff.filter((s) => s.role === r);
+  const tabs: { key: Tab; label: string; count: number }[] = [
+    { key: "CLIENT", label: "Клиенты", count: clients.length },
+    { key: "MANAGER", label: "Менеджеры", count: staffByRole("MANAGER").length },
+    { key: "ACCOUNTANT", label: "Бухгалтеры", count: staffByRole("ACCOUNTANT").length },
+    { key: "RA", label: "RA", count: staffByRole("RA").length },
+  ];
 
   const patch = (id: string, body: Record<string, unknown>) => {
     patchClient(id, body);
@@ -414,6 +535,14 @@ export default function ClientsManager({
     patch(client.id, { isActive: next });
   }
 
+  async function toggleStaffActive(member: StaffRow) {
+    const next = !member.isActive;
+    setStaff((ss) =>
+      ss.map((s) => (s.id === member.id ? { ...s, isActive: next } : s))
+    );
+    await patchClient(member.id, { isActive: next });
+  }
+
   async function saveAccess(clientId: string, ids: string[]) {
     setClients((cs) =>
       cs.map((c) => (c.id === clientId ? { ...c, access: ids } : c))
@@ -426,14 +555,33 @@ export default function ClientsManager({
   }
 
   function onCreated(user: ClientRow & { role: string }) {
-    if (user.role === "MANAGER") {
-      setManagers((m) =>
-        [...m, { id: user.id, fullName: user.fullName }].sort((a, b) =>
-          a.fullName.localeCompare(b.fullName)
-        )
-      );
-    } else {
+    if (user.role === "CLIENT") {
       setClients((cs) => [{ ...user, access: [] }, ...cs]);
+      setTab("CLIENT");
+    } else {
+      const role = user.role as StaffRoleT;
+      setStaff((ss) => [
+        {
+          id: user.id,
+          login: user.login,
+          fullName: user.fullName,
+          email: user.email,
+          phone: user.phone,
+          role,
+          isActive: user.isActive,
+          createdAt: user.createdAt,
+        },
+        ...ss,
+      ]);
+      // Keep the manager-assignment dropdown in sync.
+      if (role === "MANAGER") {
+        setManagers((m) =>
+          [...m, { id: user.id, fullName: user.fullName }].sort((a, b) =>
+            a.fullName.localeCompare(b.fullName)
+          )
+        );
+      }
+      setTab(role);
     }
     setShowCreate(false);
   }
@@ -442,16 +590,52 @@ export default function ClientsManager({
     <div className="px-6 py-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-ink">Клиенты</h1>
+          <h1 className="text-xl font-bold text-ink">
+            {isOwner ? "Пользователи" : "Клиенты"}
+          </h1>
           <p className="text-xs text-muted">
-            {clients.length} клиент(ов) · {managers.length} менеджер(ов)
+            {clients.length} клиент(ов)
+            {isOwner &&
+              ` · ${staffByRole("MANAGER").length} менеджер(ов) · ${
+                staffByRole("ACCOUNTANT").length
+              } бухг. · ${staffByRole("RA").length} RA`}
           </p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-accent">
-          <UserPlus size={16} /> Новый пользователь
-        </button>
+        {canCreate && (
+          <button onClick={() => setShowCreate(true)} className="btn-accent">
+            <UserPlus size={16} /> Новый пользователь
+          </button>
+        )}
       </div>
 
+      {isOwner && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => {
+                setTab(t.key);
+                setExpanded(null);
+              }}
+              className={cx(
+                "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+                tab === t.key
+                  ? "border-accent bg-accent text-white"
+                  : "border-line bg-white text-muted hover:bg-gray-50"
+              )}
+            >
+              {t.label}{" "}
+              <span className={tab === t.key ? "text-white/80" : "text-gray-400"}>
+                ({t.count})
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab !== "CLIENT" ? (
+        <StaffTable rows={staffByRole(tab)} onToggleActive={toggleStaffActive} />
+      ) : (
       <div className="overflow-hidden rounded-lg border border-line bg-white">
         <table className="data-table">
           <thead>
@@ -575,11 +759,13 @@ export default function ClientsManager({
           </tbody>
         </table>
       </div>
+      )}
 
-      {showCreate && (
+      {showCreate && canCreate && (
         <CreateUserModal
           onClose={() => setShowCreate(false)}
           onCreated={onCreated}
+          allowStaff={isOwner}
         />
       )}
     </div>

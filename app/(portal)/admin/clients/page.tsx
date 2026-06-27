@@ -8,8 +8,10 @@ export const metadata = { title: "Клиенты — Админ-панель" };
 export default async function AdminClientsPage() {
   const session = await getSession();
   const mgrId = session?.role === "MANAGER" ? session.sub : null;
+  // Only owner-level staff get the Managers/Accountants/RA tabs.
+  const isOwner = session?.role === "ADMIN" || session?.role === "RA";
 
-  const [clientsRaw, managers, warehouses] = await Promise.all([
+  const [clientsRaw, managers, warehouses, staffRaw] = await Promise.all([
     prisma.user.findMany({
       // Manager sees only their own clients.
       where: { role: "CLIENT", ...(mgrId ? { managerId: mgrId } : {}) },
@@ -26,6 +28,23 @@ export default async function AdminClientsPage() {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    // Staff directory (managers / accountants / RA) for the filter tabs.
+    isOwner
+      ? prisma.user.findMany({
+          where: { role: { in: ["MANAGER", "ACCOUNTANT", "RA"] } },
+          select: {
+            id: true,
+            login: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+          },
+          orderBy: [{ role: "asc" }, { fullName: "asc" }],
+        })
+      : Promise.resolve([]),
   ]);
 
   const initialClients = clientsRaw.map((c) => ({
@@ -45,11 +64,24 @@ export default async function AdminClientsPage() {
     access: c.warehouseAccess.map((a) => a.warehouseId),
   }));
 
+  const initialStaff = staffRaw.map((s) => ({
+    id: s.id,
+    login: s.login,
+    fullName: s.fullName,
+    email: s.email,
+    phone: s.phone,
+    role: s.role as "MANAGER" | "ACCOUNTANT" | "RA",
+    isActive: s.isActive,
+    createdAt: s.createdAt.toISOString(),
+  }));
+
   return (
     <ClientsManager
       initialClients={initialClients}
       initialManagers={managers}
+      initialStaff={initialStaff}
       warehouses={warehouses}
+      viewerRole={session?.role ?? "CLIENT"}
     />
   );
 }

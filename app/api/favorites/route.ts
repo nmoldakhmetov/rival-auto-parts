@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getDiscountContext, priceFor } from "@/lib/pricing";
 import { cached } from "@/lib/cache";
 import { getSetting } from "@/lib/settings";
+import { capStockForClient } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -65,10 +66,10 @@ export async function GET(req: NextRequest) {
     .filter((f) => f.product)
     .map((f) => {
       const p = f.product;
-      const stocks = p.stocks.map((s) => ({
-        warehouse: s.warehouse.name,
-        qty: s.qty,
-      }));
+      const stocks = capStockForClient(
+        p.stocks.map((s) => ({ warehouse: s.warehouse.name, qty: s.qty })),
+        session.role === "CLIENT"
+      );
       const dropActive =
         p.oldPrice != null &&
         (dropDays <= 0 ||

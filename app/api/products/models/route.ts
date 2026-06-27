@@ -45,16 +45,48 @@ export async function GET(req: NextRequest) {
 
   // Only changes on a 1С sync → cache per make (sync invalidates catalog:*).
   const models = await cached(`catalog:models:${make}`, 300_000, async () => {
+    // Candidate model names are derived from THIS make's products…
     const products = await prisma.product.findMany({
-      // Same visibility as the catalog (hidden 1С folders excluded) so the
-      // counts here match what selecting the model actually returns.
       where: {
         brand: make,
         fullNameNorm: { not: null },
         ...NOT_HIDDEN_CATEGORY,
       },
-      select: { model: true, fullNameNorm: true },
+      select: { model: true },
     });
+
+    // …but counts are GLOBAL and use the SAME field set as the search route's
+    // text match (sku / name / full_name + normalized columns), so the badge
+    // number equals exactly what selecting the model returns. Shared across
+    // makes; refreshed on sync (catalog: prefix invalidation).
+    const all = await cached("catalog:models:_allrows", 300_000, () =>
+      prisma.product.findMany({
+        where: { fullNameNorm: { not: null }, ...NOT_HIDDEN_CATEGORY },
+        select: {
+          sku: true,
+          name: true,
+          fullName: true,
+          skuNorm: true,
+          fullNameNorm: true,
+        },
+      })
+    );
+
+    // Mirror of the search route's textSearchOr predicate, in memory.
+    const matches = (
+      r: (typeof all)[number],
+      termLower: string,
+      norm: string
+    ): boolean => {
+      if (r.sku.toLowerCase().includes(termLower)) return true;
+      if (r.name.toLowerCase().includes(termLower)) return true;
+      if (r.fullName && r.fullName.toLowerCase().includes(termLower)) return true;
+      if (norm.length >= 2) {
+        if (r.skuNorm && r.skuNorm.includes(norm)) return true;
+        if (r.fullNameNorm && r.fullNameNorm.includes(norm)) return true;
+      }
+      return false;
+    };
 
     // Distinct base names derived from the detected model field.
     const display = new Map<string, string>(); // normKey → display name
@@ -66,13 +98,14 @@ export async function GET(req: NextRequest) {
       if (!display.has(key)) display.set(key, base);
     }
 
-    // Count = products of this make whose applicability mentions the model.
-    const norms = products.map((p) => p.fullNameNorm as string);
     return [...display.entries()]
-      .map(([key, name]) => ({
-        name,
-        count: norms.reduce((acc, fn) => acc + (fn.includes(key) ? 1 : 0), 0),
-      }))
+      .map(([key, name]) => {
+        const termLower = name.toLowerCase();
+        return {
+          name,
+          count: all.reduce((acc, r) => acc + (matches(r, termLower, key) ? 1 : 0), 0),
+        };
+      })
       .filter((m) => m.count > 0)
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ru"))
       .slice(0, 80);

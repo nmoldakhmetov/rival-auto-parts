@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { canEditCatalog } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { prefetchAllImages, countCached } from "@/lib/image-cache";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Authorized by X-Sync-Token header or an ADMIN session (under /api/sync/*,
-// which middleware lets through).
+// Authorized by X-Sync-Token header or an owner-level staff session (ADMIN/RA,
+// under /api/sync/* which middleware lets through).
 async function authorize(req: NextRequest): Promise<boolean> {
   const token = req.headers.get("x-sync-token");
   if (token && process.env.SYNC_SECRET && token === process.env.SYNC_SECRET) {
     return true;
   }
   const session = await getSession();
-  return session?.role === "ADMIN";
+  return session ? canEditCatalog(session.role) : false;
 }
 
 // Cache stats.
