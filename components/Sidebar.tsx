@@ -20,6 +20,7 @@ import {
   Heart,
   Megaphone,
   Percent,
+  Gift,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -54,6 +55,7 @@ const ADMIN_NAV: {
   { section: "returns", href: "/admin/returns", label: "Возвраты", Icon: Undo2 },
   { section: "clients", href: "/admin/clients", label: "Клиенты", Icon: Users },
   { section: "discounts", href: "/admin/discounts", label: "Скидки", Icon: Percent },
+  { section: "gifts", href: "/admin/gifts", label: "Подарки", Icon: Gift },
   { section: "broadcasts", href: "/admin/broadcasts", label: "Рассылки", Icon: Megaphone },
   { section: "analogs", href: "/admin/analogs", label: "Аналоги", Icon: Replace },
   { section: "stats", href: "/admin/stats", label: "Статистика", Icon: BarChart3 },

@@ -1,4 +1,6 @@
-export type StockCell = { warehouse: string; qty: number };
+// `capped` is set when the real quantity is hidden from a CLIENT (qty above
+// CLIENT_STOCK_CAP shows as ">70" instead of the exact number — see lib/stock).
+export type StockCell = { warehouse: string; qty: number; capped?: boolean };
 
 export type CatalogRow = {
   id: string;

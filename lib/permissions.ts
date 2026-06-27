@@ -18,6 +18,7 @@ export type AdminSection =
   | "returns"
   | "clients"
   | "discounts"
+  | "gifts"
   | "broadcasts"
   | "analogs"
   | "stats"
@@ -32,6 +33,7 @@ const SECTION_ROLES: Record<AdminSection, Role[]> = {
   returns: ["ADMIN", "RA", "MANAGER", "ACCOUNTANT"],
   clients: ["ADMIN", "RA", "MANAGER", "ACCOUNTANT"],
   discounts: ["ADMIN", "RA", "MANAGER"],
+  gifts: ["ADMIN", "RA"],
   broadcasts: ["ADMIN", "RA", "MANAGER"],
   analogs: ["ADMIN", "RA", "MANAGER"],
   stats: ["ADMIN", "RA", "MANAGER", "ACCOUNTANT"],
@@ -68,6 +70,7 @@ const SECTION_PREFIX: { prefix: string; section: AdminSection }[] = [
   { prefix: "clients", section: "clients" },
   { prefix: "users", section: "clients" }, // /api/admin/users ~ clients
   { prefix: "discounts", section: "discounts" },
+  { prefix: "gifts", section: "gifts" },
   { prefix: "broadcasts", section: "broadcasts" },
   { prefix: "analogs", section: "analogs" },
   { prefix: "stats", section: "stats" },

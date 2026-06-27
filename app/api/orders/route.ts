@@ -5,6 +5,7 @@ import { buildWaLink } from "@/lib/whatsapp";
 import { formatTenge } from "@/lib/format";
 import { getDiscountContext } from "@/lib/pricing";
 import { sendOrderToOneC } from "@/lib/onec-orders";
+import { getActiveGiftRules, earnedGiftIds } from "@/lib/gifts";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
     name: string;
     price: number;
     qty: number;
+    isGift: boolean;
   }[] = [];
   const onecProducts: {
     code: string | null;
@@ -56,13 +58,22 @@ export async function POST(req: NextRequest) {
     qty: number;
     price: number;
   }[] = [];
+  const qtyById = new Map<string, number>();
   for (const i of incoming) {
     const p = byId.get(i.productId);
     if (!p) continue;
     const qty = Math.max(1, Math.trunc(Number(i.qty) || 1));
     const price = Math.round(Number(p.price) * (1 - disc.pctFor(p) / 100));
     total += price * qty;
-    orderItems.push({ productId: p.id, sku: p.sku, name: p.name, price, qty });
+    qtyById.set(p.id, (qtyById.get(p.id) ?? 0) + qty);
+    orderItems.push({
+      productId: p.id,
+      sku: p.sku,
+      name: p.name,
+      price,
+      qty,
+      isGift: false,
+    });
     onecProducts.push({ code: p.code, sku: p.sku, qty, price });
   }
 
@@ -71,6 +82,28 @@ export async function POST(req: NextRequest) {
       { error: "Товары не найдены в каталоге" },
       { status: 400 }
     );
+  }
+
+  // Gifts: any rule whose trigger product reached its threshold adds its gift
+  // products to the order for free (price 0). Computed server-side — never
+  // trust the client. A gift the buyer also paid for is still added (free copy).
+  const giftRules = await getActiveGiftRules();
+  const giftIds = earnedGiftIds(giftRules, qtyById);
+  if (giftIds.length > 0) {
+    const giftProducts = await prisma.product.findMany({
+      where: { id: { in: giftIds } },
+    });
+    for (const gp of giftProducts) {
+      orderItems.push({
+        productId: gp.id,
+        sku: gp.sku,
+        name: gp.name,
+        price: 0,
+        qty: 1,
+        isGift: true,
+      });
+      onecProducts.push({ code: gp.code, sku: gp.sku, qty: 1, price: 0 });
+    }
   }
 
   const order = await prisma.order.create({
@@ -104,7 +137,10 @@ export async function POST(req: NextRequest) {
   }
 
   const lines = orderItems.map(
-    (i, idx) => `${idx + 1}. ${i.sku} — ${i.name} × ${i.qty} шт.`
+    (i, idx) =>
+      `${idx + 1}. ${i.sku} — ${i.name} × ${i.qty} шт.${
+        i.isGift ? " (подарок)" : ""
+      }`
   );
   const text =
     `Здравствуйте! Заказ №${orderNo}` +

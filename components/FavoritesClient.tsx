@@ -169,7 +169,7 @@ export default function FavoritesClient() {
                           key={s.warehouse}
                           className="rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] text-green-800"
                         >
-                          {s.warehouse}: <b>{s.qty}</b>
+                          {s.warehouse}: <b>{s.capped ? ">70" : s.qty}</b>
                         </span>
                       ))}
                     </div>

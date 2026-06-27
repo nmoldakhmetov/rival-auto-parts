@@ -8,6 +8,7 @@ import { getDiscountContext, priceFor } from "@/lib/pricing";
 import { NOT_HIDDEN_CATEGORY } from "@/lib/categories";
 import { cached } from "@/lib/cache";
 import { getSetting } from "@/lib/settings";
+import { capStockForClient } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -95,42 +96,38 @@ export async function GET(req: NextRequest) {
     analogMatches.map((a) => [a.sku.toUpperCase(), a])
   );
 
-  const normQ = q ? normalizeSmart(q) : "";
+  // Free-text search OR — the SAME field set is used for the search box (q)
+  // and the model facet, so selecting a model returns exactly what typing it
+  // would. No `brand` clause on purpose: the make is derived from full_name, so
+  // "genesis"/"sonata" match via applicability text (make is a separate facet).
+  // Smart match ignores spaces/dashes/case (zeekr 9x = zeekr9x = zeekr-9x).
+  const textSearchOr = (term: string): Prisma.ProductWhereInput[] => {
+    const norm = normalizeSmart(term);
+    const or: Prisma.ProductWhereInput[] = [
+      { sku: { contains: term, mode: "insensitive" } },
+      { fullName: { contains: term, mode: "insensitive" } },
+      { name: { contains: term, mode: "insensitive" } },
+    ];
+    if (norm.length >= 2) {
+      or.push({ skuNorm: { contains: norm } });
+      or.push({ fullNameNorm: { contains: norm } });
+    }
+    return or;
+  };
 
   const and: Prisma.ProductWhereInput[] = [];
   if (q) {
-    // Note: no `brand` clause on purpose — the make is derived from full_name
-    // anyway, so "genesis" must match via applicability text, not the make
-    // facet (the user filters by make separately).
-    const or: Prisma.ProductWhereInput[] = [
-      { sku: { contains: q, mode: "insensitive" } },
-      { fullName: { contains: q, mode: "insensitive" } },
-      { name: { contains: q, mode: "insensitive" } },
-    ];
-    // Smart match: ignore spaces/dashes/case (zeekr 9x = zeekr9x = zeekr-9x).
-    if (normQ.length >= 2) {
-      or.push({ skuNorm: { contains: normQ } });
-      or.push({ fullNameNorm: { contains: normQ } });
-    }
-    if (analogSkus.length > 0) {
-      or.push({ sku: { in: analogSkus } });
-    }
+    const or = textSearchOr(q);
+    // A typed code can also resolve to catalog skus via the analog table.
+    if (analogSkus.length > 0) or.push({ sku: { in: analogSkus } });
     and.push({ OR: or });
   }
-  if (make) and.push({ brand: make });
-  // Model filter = plain text search in the applicability (full_name), exactly
-  // like typing it into the search box: picking «Sonata» must return every
-  // product whose full_name mentions sonata (smart match incl. separators).
-  if (model) {
-    const normModel = normalizeSmart(model);
-    const modelOr: Prisma.ProductWhereInput[] = [
-      { fullName: { contains: model, mode: "insensitive" } },
-    ];
-    if (normModel.length >= 2) {
-      modelOr.push({ fullNameNorm: { contains: normModel } });
-    }
-    and.push({ OR: modelOr });
-  }
+  // The make facet only narrows the result when NO model is chosen. Picking a
+  // model behaves exactly like typing that word: a brand-agnostic text search
+  // over the whole catalog — so make+model and a free-text search for the model
+  // return the identical set.
+  if (make && !model) and.push({ brand: make });
+  if (model) and.push({ OR: textSearchOr(model) });
   if (category) and.push({ category });
   else if (categoryGroup) and.push({ category: { startsWith: categoryGroup } });
   if (Number.isFinite(minPrice)) and.push({ price: { gte: minPrice } });
@@ -182,11 +179,12 @@ export async function GET(req: NextRequest) {
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  const isClient = session.role === "CLIENT";
   const rows: CatalogRow[] = products.map((p) => {
-    const stocks = p.stocks.map((s) => ({
-      warehouse: s.warehouse.name,
-      qty: s.qty,
-    }));
+    const stocks = capStockForClient(
+      p.stocks.map((s) => ({ warehouse: s.warehouse.name, qty: s.qty })),
+      isClient
+    );
     const analog = analogBySku.get(p.sku.toUpperCase());
     // The 1С price-drop strike-through only lives `price_drop_days` days
     // (0 = no limit). The badge auto-falls-back to «новинка» while newUntil.

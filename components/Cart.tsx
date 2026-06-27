@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Minus,
@@ -12,9 +12,18 @@ import {
   CheckCircle2,
   MessageCircle,
   TriangleAlert,
+  Gift,
 } from "lucide-react";
 import { useCart, cartSum } from "@/store/cart";
 import { formatTenge, formatDiscount } from "@/lib/format";
+import type { CatalogRow } from "@/lib/types";
+
+type GiftRule = {
+  id: string;
+  minQty: number;
+  triggerIds: string[];
+  giftIds: string[];
+};
 
 type CheckoutResult = {
   orderNo: string;
@@ -34,7 +43,36 @@ export default function Cart({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<CheckoutResult | null>(null);
 
+  const [giftRules, setGiftRules] = useState<GiftRule[]>([]);
+  const [giftProducts, setGiftProducts] = useState<Record<string, CatalogRow>>(
+    {}
+  );
+
   useEffect(() => setMounted(true), []);
+
+  // Active gift promos → free items earned by the current cart contents. The
+  // server re-computes these on checkout; here it's display only.
+  useEffect(() => {
+    fetch("/api/gifts")
+      .then((r) => r.json())
+      .then((d) => {
+        setGiftRules(d.rules ?? []);
+        setGiftProducts(d.giftProducts ?? {});
+      })
+      .catch(() => {});
+  }, []);
+
+  const earnedGifts = useMemo(() => {
+    if (giftRules.length === 0) return [] as CatalogRow[];
+    const qtyById = new Map(items.map((i) => [i.productId, i.qty]));
+    const ids = new Set<string>();
+    for (const r of giftRules) {
+      if (r.triggerIds.some((id) => (qtyById.get(id) ?? 0) >= r.minQty)) {
+        for (const g of r.giftIds) ids.add(g);
+      }
+    }
+    return [...ids].map((id) => giftProducts[id]).filter(Boolean) as CatalogRow[];
+  }, [items, giftRules, giftProducts]);
 
   async function checkout() {
     setError(null);
@@ -243,6 +281,26 @@ export default function Cart({
                       <Trash2 size={15} />
                     </button>
                   </td>
+                </tr>
+              ))}
+              {earnedGifts.map((g) => (
+                <tr key={`gift-${g.id}`} className="bg-green-50/50">
+                  <td>
+                    <div className="flex items-center gap-1.5 font-semibold text-ink">
+                      <Gift size={14} className="text-green-600" />
+                      {g.sku}
+                      <span className="rounded-full bg-green-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                        подарок
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted">{g.name}</div>
+                  </td>
+                  <td className="text-right font-semibold text-green-700">
+                    Бесплатно
+                  </td>
+                  <td className="text-center text-sm text-muted">1</td>
+                  <td className="text-right font-semibold text-green-700">0 ₸</td>
+                  <td></td>
                 </tr>
               ))}
             </tbody>
