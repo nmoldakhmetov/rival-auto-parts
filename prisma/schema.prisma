@@ -51,6 +51,11 @@ enum DiscountTarget {
   BRAND // на марку/бренд
 }
 
+enum RuleKind {
+  DISCOUNT // скидка −% (не применяется к isFinalPrice)
+  MARKUP // наценка +% (применяется КО ВСЕМ товарам, включая isFinalPrice)
+}
+
 // ─── Users (admins, managers, clients) ───────────────────────────────────
 
 model User {
@@ -380,6 +385,7 @@ model BroadcastRecipient {
 model DiscountRule {
   id        String         @id @default(cuid())
   name      String? // метка для админа
+  kind      RuleKind       @default(DISCOUNT) // скидка −% или наценка +%
   percent   Int // 1..95
   userId    String? // null = всем клиентам
   target    DiscountTarget @default(ALL)

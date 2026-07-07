@@ -34,7 +34,8 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const [favs, disc, dropDaysStr, discountDisplay] = await Promise.all([
+  const [favs, disc, dropDaysStr, discountDisplay, warehouseTooltip] =
+    await Promise.all([
     prisma.favorite.findMany({
       where: { userId: session.sub },
       orderBy: { createdAt: "desc" },
@@ -57,6 +58,9 @@ export async function GET(req: NextRequest) {
     ),
     cached("cfg:price_drop_days", 60_000, () => getSetting("price_drop_days")),
     cached("cfg:discount_display", 60_000, () => getSetting("discount_display")),
+    cached("cfg:warehouse_tooltip", 60_000, () =>
+      getSetting("warehouse_tooltip")
+    ),
   ]);
   const dropDays = parseInt(dropDaysStr, 10) || 0;
   const nowMs = Date.now();
@@ -101,7 +105,12 @@ export async function GET(req: NextRequest) {
       };
     });
 
-  return NextResponse.json({ ids: rows.map((r) => r.id), rows, discountDisplay });
+  return NextResponse.json({
+    ids: rows.map((r) => r.id),
+    rows,
+    discountDisplay,
+    warehouseTooltip,
+  });
 }
 
 // Toggle a product in the current user's favorites.

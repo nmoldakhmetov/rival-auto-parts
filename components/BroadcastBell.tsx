@@ -213,7 +213,7 @@ export default function BroadcastBell() {
                         ? "Откроется страницей с товарами — как каталог"
                         : undefined
                     }
-                    className="group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-gray-50"
+                    className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition-all duration-200 hover:-translate-y-[1px] hover:border-line hover:bg-gray-50 hover:shadow-md"
                   >
                     <span
                       className={
@@ -244,10 +244,14 @@ export default function BroadcastBell() {
                       </span>
                     </span>
                     {b.products.length > 0 ? (
-                      <LayoutGrid
-                        size={15}
-                        className="shrink-0 text-gray-300 transition-colors group-hover:text-accent"
-                      />
+                      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-muted transition-all duration-200 group-hover:border-accent group-hover:bg-accent group-hover:text-white">
+                        <LayoutGrid size={12} />
+                        Перейти к товарам
+                        <ChevronRight
+                          size={13}
+                          className="transition-transform duration-200 group-hover:translate-x-0.5"
+                        />
+                      </span>
                     ) : (
                       <ChevronRight
                         size={16}

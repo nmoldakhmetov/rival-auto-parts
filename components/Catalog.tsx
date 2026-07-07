@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Plus,
-  Check,
   ImageOff,
   Loader2,
   PackageSearch,
@@ -13,8 +12,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  List,
-  LayoutGrid,
   ShoppingCart,
   ZoomIn,
   Replace,
@@ -27,10 +24,14 @@ import {
 } from "lucide-react";
 import { useCart } from "@/store/cart";
 import { useSearch } from "@/store/search";
-import { formatTenge, formatNum, formatDiscount } from "@/lib/format";
+import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
+import { isPairOnly, PAIR_STEP } from "@/lib/pair-only";
 import { canEditCatalog } from "@/lib/permissions";
 import CartQtySelector from "@/components/CartQtySelector";
+import StockBadges from "@/components/StockBadges";
+import ViewToggle, { type ViewMode } from "@/components/ViewToggle";
+import EmptyState from "@/components/EmptyState";
 import { toast } from "@/store/toast";
 import type { CatalogRow } from "@/lib/types";
 import type { Role } from "@/lib/jwt";
@@ -111,8 +112,6 @@ function SkeletonList({ count = 10 }: { count?: number }) {
   );
 }
 
-type ViewMode = "list" | "grid";
-
 type SearchResp = {
   rows?: CatalogRow[];
   total?: number;
@@ -120,6 +119,7 @@ type SearchResp = {
   totalPages?: number;
   pageSize?: number;
   discountDisplay?: string;
+  warehouseTooltip?: string;
 };
 
 // Builds a windowed list of page numbers; -1 marks an ellipsis gap.
@@ -241,6 +241,7 @@ export default function Catalog({
   role,
   hasNoAccess,
   broadcastId,
+  promoOnly,
   heading,
   subheading,
 }: {
@@ -249,6 +250,8 @@ export default function Catalog({
   // Optional broadcast scope: full catalog UX limited to one broadcast's
   // products (used by /broadcasts/[id], «как каталог»).
   broadcastId?: string;
+  // «Акции»: only gift-trigger and discounted products, gifts pinned first.
+  promoOnly?: boolean;
   heading?: string;
   subheading?: string;
 }) {
@@ -266,12 +269,18 @@ export default function Catalog({
   const [inStock, setInStock] = useState(false);
   const [sort, setSort] = useState(""); // "" | price_asc | price_desc
   const [discountDisplay, setDiscountDisplay] = useState("percent");
+  // Delivery-terms tooltip on warehouse pills (Setting `warehouse_tooltip`).
+  const [whTooltip, setWhTooltip] = useState("");
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
 
-  const [view, setView] = useState<ViewMode>("grid");
+  // List view is the default everywhere the catalog opens (incl. deep links
+  // from broadcasts); the grid stays available via the toggle.
+  const [view, setView] = useState<ViewMode>("list");
+  // Mobile-only filters drawer (on md+ the filter rail is always visible).
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
@@ -415,6 +424,7 @@ export default function Catalog({
       if (inStock) params.set("inStock", "1");
       if (sort) params.set("sort", sort);
       if (broadcastId) params.set("broadcast", broadcastId);
+      if (promoOnly) params.set("promo", "1");
       params.set("page", String(p));
       return params.toString();
     };
@@ -435,6 +445,7 @@ export default function Catalog({
       setTotalPages(d.totalPages ?? 1);
       if (d.pageSize) setPageSize(d.pageSize);
       if (d.discountDisplay) setDiscountDisplay(d.discountDisplay);
+      if (d.warehouseTooltip !== undefined) setWhTooltip(d.warehouseTooltip);
     };
 
     const delay = query !== prevQueryRef.current ? 300 : 0;
@@ -482,19 +493,24 @@ export default function Catalog({
         .finally(() => setLoading(false));
     }, delay);
     return () => clearTimeout(t);
-  }, [query, make, model, category, categoryGroup, minPrice, maxPrice, inStock, sort, broadcastId, page]);
+  }, [query, make, model, category, categoryGroup, minPrice, maxPrice, inStock, sort, broadcastId, promoOnly, page]);
 
   function handleAdd(row: CatalogRow) {
-    add({
-      productId: row.id,
-      sku: row.sku,
-      name: row.name,
-      price: row.price,
-      // Carry the discount into the cart so it stays visible there.
-      oldPrice: row.oldPrice,
-      discountPct: row.discountPct,
-      imageUrl: row.imageUrl,
-    });
+    const pair = isPairOnly(row.category);
+    add(
+      {
+        productId: row.id,
+        sku: row.sku,
+        name: row.name,
+        price: row.price,
+        // Carry the discount into the cart so it stays visible there.
+        oldPrice: row.oldPrice,
+        discountPct: row.discountPct,
+        imageUrl: row.imageUrl,
+        pairOnly: pair,
+      },
+      pair ? PAIR_STEP : 1
+    );
   }
 
   function resetFilters() {
@@ -529,30 +545,6 @@ export default function Catalog({
   );
 
   const empty = !loading && rows.length === 0;
-
-  function StockBadges({ row }: { row: CatalogRow }) {
-    if (row.stocks.length === 0) {
-      return <span className="text-xs text-muted">нет на складах</span>;
-    }
-    return (
-      <div className="flex flex-wrap gap-1">
-        {row.stocks.map((s) => (
-          <span
-            key={s.warehouse}
-            className={cx(
-              "badge border",
-              s.qty > 0
-                ? "border-green-200 bg-green-50 text-green-700"
-                : "border-line bg-gray-50 text-muted"
-            )}
-            title={s.warehouse}
-          >
-            {s.warehouse}:&nbsp;<b>{s.capped ? ">70" : formatNum(s.qty)}</b>
-          </span>
-        ))}
-      </div>
-    );
-  }
 
   // ─── Gift promos ──────────────────────────────────────────────────────────
   const giftRulesFor = (productId: string) =>
@@ -612,7 +604,7 @@ export default function Catalog({
   return (
     <div className="flex h-full flex-col">
       {/* Slim header (the search lives in the global Header now) */}
-      <div className="flex items-center justify-between gap-4 border-b border-line bg-white px-6 py-3">
+      <div className="flex items-center justify-between gap-2 border-b border-line bg-white px-4 py-3 sm:gap-4 sm:px-6">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold text-ink">
             {heading ?? "Каталог запчастей"}
@@ -627,38 +619,27 @@ export default function Catalog({
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3">
-          {/* View toggle */}
-          <div className="inline-flex rounded-lg border border-line bg-gray-50 p-0.5">
-            <button
-              onClick={() => setView("list")}
-              title="Список"
-              className={cx(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-200",
-                view === "list"
-                  ? "bg-white text-ink shadow-sm"
-                  : "text-muted hover:text-ink"
-              )}
-            >
-              <List size={14} />
-              <span className="hidden sm:inline">Список</span>
-            </button>
-            <button
-              onClick={() => setView("grid")}
-              title="Сетка"
-              className={cx(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-200",
-                view === "grid"
-                  ? "bg-white text-ink shadow-sm"
-                  : "text-muted hover:text-ink"
-              )}
-            >
-              <LayoutGrid size={14} />
-              <span className="hidden sm:inline">Сетка</span>
-            </button>
-          </div>
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {/* Mobile filters trigger */}
+          <button
+            onClick={() => setFiltersOpen(true)}
+            className={cx(
+              "relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200 md:hidden",
+              hasFilters
+                ? "border-accent/40 bg-accent/5 text-accent"
+                : "border-line text-muted hover:text-ink"
+            )}
+          >
+            <SlidersHorizontal size={14} />
+            <span>Фильтры</span>
+            {hasFilters && (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-accent" />
+            )}
+          </button>
 
-          <div className="text-xs text-muted">
+          <ViewToggle view={view} onChange={setView} />
+
+          <div className="hidden text-xs text-muted sm:block">
             {loading ? (
               <span className="inline-flex items-center gap-1">
                 <Loader2 size={12} className="animate-spin" /> поиск…
@@ -682,20 +663,43 @@ export default function Catalog({
 
       {/* Filters + content */}
       <div className="flex min-h-0 flex-1">
-        {/* Filter rail */}
-        <aside className="hidden w-60 shrink-0 overflow-y-auto border-r border-line bg-white p-4 md:block">
+        {/* Mobile filters backdrop */}
+        {filtersOpen && (
+          <div
+            onClick={() => setFiltersOpen(false)}
+            className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm md:hidden"
+            aria-hidden
+          />
+        )}
+        {/* Filter rail: drawer on mobile, static column on md+ */}
+        <aside
+          className={cx(
+            "fixed inset-y-0 left-0 z-[110] w-72 overflow-y-auto border-r border-line bg-white p-4 transition-transform duration-200",
+            filtersOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full",
+            "md:static md:z-auto md:w-60 md:shrink-0 md:translate-x-0 md:shadow-none md:transition-none"
+          )}
+        >
           <div className="mb-3 flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-sm font-bold text-ink">
               <SlidersHorizontal size={15} /> Фильтры
             </span>
-            {hasFilters && (
+            <span className="flex items-center gap-2">
+              {hasFilters && (
+                <button
+                  onClick={resetFilters}
+                  className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+                >
+                  <X size={11} /> Сбросить
+                </button>
+              )}
               <button
-                onClick={resetFilters}
-                className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+                onClick={() => setFiltersOpen(false)}
+                title="Закрыть фильтры"
+                className="flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-gray-100 hover:text-ink md:hidden"
               >
-                <X size={11} /> Сбросить
+                <X size={15} />
               </button>
-            )}
+            </span>
           </div>
 
           <div className="space-y-4">
@@ -853,28 +857,40 @@ export default function Catalog({
                 <SkeletonList />
               )
             ) : empty ? (
-              <div className="rounded-lg border border-line bg-white py-16 text-center">
-                <PackageSearch size={32} className="mx-auto mb-2 text-gray-300" />
-                <div className="text-sm font-medium text-ink">
-                  Ничего не найдено
-                </div>
-                <div className="text-xs text-muted">
-                  Измените фильтры или синхронизируйте каталог с 1С.
-                </div>
-              </div>
+              <EmptyState
+                Icon={PackageSearch}
+                title="Ничего не найдено"
+                hint={
+                  query
+                    ? `По запросу «${query}» ничего нет — проверьте артикул или попробуйте другое слово.`
+                    : "Попробуйте изменить фильтры — или загляните в полный каталог."
+                }
+              >
+                {(hasFilters || query) && (
+                  <button
+                    onClick={() => {
+                      setQuery("");
+                      resetFilters();
+                    }}
+                    className="btn-accent"
+                  >
+                    <X size={15} /> Сбросить фильтры
+                  </button>
+                )}
+              </EmptyState>
             ) : view === "list" ? (
-              /* ─── List (table) view ─────────────────────────────── */
-              <div className="overflow-hidden rounded-lg border border-line bg-white">
-                <table className="data-table">
+              /* ─── List (table) view (scrolls horizontally on phones) ── */
+              <div className="overflow-x-auto rounded-lg border border-line bg-white">
+                <table className="data-table min-w-[900px]">
                   <thead className="sticky top-0 z-10">
                     <tr>
                       <th className="w-14">Фото</th>
                       <th className="w-40">Артикул</th>
                       <th className="w-36">Категория</th>
                       <th>Применяемость</th>
-                      <th className="w-28 text-right">Цена</th>
                       <th className="w-60">Наличие</th>
-                      {showActions && <th className="w-20"></th>}
+                      <th className="w-28 text-right">Цена</th>
+                      {showActions && <th className="w-44"></th>}
                       {showAdminControls && (
                         <th className="w-48">Управление</th>
                       )}
@@ -884,8 +900,18 @@ export default function Catalog({
                     {rows.map((row) => {
                       const qtyInCart = cartQtyById.get(row.id) ?? 0;
                       const inCart = qtyInCart > 0;
+                      // «Диски UIDNU»: цена сразу за пару, шаг корзины 2.
+                      const pair = isPairOnly(row.category);
+                      const mult = pair ? 2 : 1;
                       return (
-                        <tr key={row.id}>
+                        <tr
+                          key={row.id}
+                          className={
+                            row.exactMatch
+                              ? "bg-accent/5 shadow-[inset_3px_0_0_0_#E53935]"
+                              : undefined
+                          }
+                        >
                           <td>
                             <ProductImage
                               src={row.imageUrl}
@@ -948,35 +974,42 @@ export default function Catalog({
                             )}
                             <GiftBanner row={row} compact />
                           </td>
+                          <td>
+                            <StockBadges stocks={row.stocks} tooltip={whTooltip} />
+                          </td>
                           <td className="text-right font-semibold text-ink">
                             {row.price > 0 ? (
                               <>
                                 {row.discountPct > 0 &&
                                   row.oldPrice != null && (
                                     <div className="text-[10px] font-normal text-gray-400 line-through">
-                                      {formatTenge(row.oldPrice)}
+                                      {formatTenge(row.oldPrice * mult)}
                                     </div>
                                   )}
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {formatTenge(row.price)}
+                                  {formatTenge(row.price * mult)}
                                   {row.discountPct > 0 && (
                                     <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                                       {formatDiscount(
                                         discountDisplay,
                                         row.discountPct,
-                                        row.oldPrice,
-                                        row.price
+                                        row.oldPrice != null
+                                          ? row.oldPrice * mult
+                                          : row.oldPrice,
+                                        row.price * mult
                                       )}
                                     </span>
                                   )}
                                 </div>
+                                {pair && (
+                                  <div className="text-[10px] font-semibold text-muted">
+                                    за 2 шт
+                                  </div>
+                                )}
                               </>
                             ) : (
                               "—"
                             )}
-                          </td>
-                          <td>
-                            <StockBadges row={row} />
                           </td>
                           {showActions && (
                             <td>
@@ -998,38 +1031,34 @@ export default function Catalog({
                                     }
                                   />
                                 </button>
-                                <button
-                                  onClick={() => handleAdd(row)}
-                                  disabled={!inCart && row.totalQty === 0}
-                                  title={
-                                    inCart
-                                      ? `В корзине: ${qtyInCart} шт — добавить ещё`
-                                      : row.totalQty === 0
+                                {inCart ? (
+                                  <div className="w-32">
+                                    <CartQtySelector
+                                      qty={qtyInCart}
+                                      step={pair ? PAIR_STEP : 1}
+                                      onSet={(n) => setCartQty(row.id, n)}
+                                      onRemove={() => removeFromCart(row.id)}
+                                    />
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => handleAdd(row)}
+                                    disabled={row.totalQty === 0}
+                                    title={
+                                      row.totalQty === 0
                                         ? "Нет в наличии — добавьте в избранное"
                                         : "В корзину"
-                                  }
-                                  className={cx(
-                                    "relative flex h-8 w-8 items-center justify-center rounded transition-colors",
-                                    inCart
-                                      ? "bg-green-600 text-white"
-                                      : row.totalQty === 0
+                                    }
+                                    className={cx(
+                                      "flex h-8 w-8 items-center justify-center rounded transition-colors",
+                                      row.totalQty === 0
                                         ? "cursor-not-allowed bg-gray-100 text-gray-300"
                                         : "bg-accent text-white hover:bg-accent-dark"
-                                  )}
-                                >
-                                  {inCart ? (
-                                    <>
-                                      <Check size={16} />
-                                      {qtyInCart > 1 && (
-                                        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-ink px-1 text-[9px] font-bold text-white">
-                                          {qtyInCart}
-                                        </span>
-                                      )}
-                                    </>
-                                  ) : (
+                                    )}
+                                  >
                                     <Plus size={16} />
-                                  )}
-                                </button>
+                                  </button>
+                                )}
                               </div>
                             </td>
                           )}
@@ -1083,13 +1112,21 @@ export default function Catalog({
                   const inCart = qtyInCart > 0;
                   const pct = row.discountPct;
                   const oldP = row.oldPrice;
+                  // «Диски UIDNU»: цена сразу за пару, шаг корзины 2.
+                  const pair = isPairOnly(row.category);
+                  const mult = pair ? 2 : 1;
                   const desc =
                     row.fullName || (role === "CLIENT" ? "" : row.name);
                   return (
                     <div
                       key={row.id}
                       style={{ animationDelay: `${Math.min(i, 11) * 25}ms` }}
-                      className="animate-fade-in-up group relative flex flex-col rounded-xl border border-line bg-white shadow-sm transition-all duration-200 hover:z-10 hover:shadow-lg"
+                      className={cx(
+                        "animate-fade-in-up group relative flex flex-col rounded-xl border bg-white transition-all duration-200 hover:z-10 hover:shadow-lg",
+                        row.exactMatch
+                          ? "border-accent shadow-md ring-2 ring-accent/25"
+                          : "border-line shadow-sm"
+                      )}
                     >
                       <div className="relative flex h-44 items-center justify-center overflow-hidden rounded-t-xl border-b border-line bg-gray-50 p-3">
                         <ProductImage
@@ -1161,7 +1198,7 @@ export default function Catalog({
                         )}
 
                         <div className="mt-2.5">
-                          <StockBadges row={row} />
+                          <StockBadges stocks={row.stocks} tooltip={whTooltip} />
                         </div>
 
                         <GiftBanner row={row} />
@@ -1172,20 +1209,25 @@ export default function Catalog({
                               {pct > 0 && oldP != null && (
                                 <div className="mb-0.5 flex items-center gap-2">
                                   <span className="text-sm text-gray-400 line-through">
-                                    {formatTenge(oldP)}
+                                    {formatTenge(oldP * mult)}
                                   </span>
                                   <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                                     {formatDiscount(
                                       discountDisplay,
                                       pct,
-                                      oldP,
-                                      row.price
+                                      oldP * mult,
+                                      row.price * mult
                                     )}
                                   </span>
                                 </div>
                               )}
                               <div className="text-xl font-extrabold text-ink">
-                                {formatTenge(row.price)}
+                                {formatTenge(row.price * mult)}
+                                {pair && (
+                                  <span className="ml-1.5 text-xs font-semibold text-muted">
+                                    за 2 шт
+                                  </span>
+                                )}
                               </div>
                             </div>
                           ) : (
@@ -1198,6 +1240,7 @@ export default function Catalog({
                             (inCart ? (
                               <CartQtySelector
                                 qty={qtyInCart}
+                                step={pair ? PAIR_STEP : 1}
                                 onSet={(n) => setCartQty(row.id, n)}
                                 onRemove={() => removeFromCart(row.id)}
                               />
@@ -1367,7 +1410,7 @@ export default function Catalog({
                 </p>
               )}
               <div className="mt-3">
-                <StockBadges row={giftModal} />
+                <StockBadges stocks={giftModal.stocks} tooltip={whTooltip} />
               </div>
               {giftModal.price > 0 && (
                 <div className="mt-3 flex items-center gap-2">

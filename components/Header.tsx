@@ -10,8 +10,10 @@ import {
   Clock,
   Mail,
   UserRound,
+  Menu,
 } from "lucide-react";
 import { useSearch } from "@/store/search";
+import { useUi } from "@/store/ui";
 import { normalizePhone } from "@/lib/whatsapp";
 import BroadcastBell from "@/components/BroadcastBell";
 
@@ -66,6 +68,7 @@ export default function Header({ manager }: { manager?: Manager | null }) {
   const pathname = usePathname();
   const query = useSearch((s) => s.query);
   const setQuery = useSearch((s) => s.setQuery);
+  const setSidebarOpen = useUi((s) => s.setSidebarOpen);
   const [open, setOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -97,11 +100,25 @@ export default function Header({ manager }: { manager?: Manager | null }) {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (pathname !== "/catalog") router.push("/catalog");
+    if (pathname === "/catalog") return; // the catalog searches live as you type
+    // Carry the query in the URL so the route change doesn't reset it (see
+    // SearchReset) and the search becomes a shareable deep link.
+    const q = query.trim();
+    router.push(q ? `/catalog?q=${encodeURIComponent(q)}` : "/catalog");
   }
 
   return (
-    <header className="z-30 flex shrink-0 items-center gap-3 border-b border-line bg-white px-4 py-3 shadow-sm sm:px-6">
+    <header className="z-30 flex shrink-0 items-center gap-2 border-b border-line bg-white px-3 py-3 shadow-sm sm:gap-3 sm:px-6">
+      {/* Burger — opens the sidebar drawer on mobile */}
+      <button
+        onClick={() => setSidebarOpen(true)}
+        title="Меню"
+        aria-label="Открыть меню"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink transition-all duration-200 hover:border-accent/40 hover:text-accent lg:hidden"
+      >
+        <Menu size={19} />
+      </button>
+
       {/* Global search */}
       <form onSubmit={onSubmit} className="relative w-full max-w-2xl">
         <Search

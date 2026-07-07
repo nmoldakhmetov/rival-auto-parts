@@ -6,6 +6,7 @@ import { RotateCcw, Loader2 } from "lucide-react";
 import { useCart } from "@/store/cart";
 import { toast } from "@/store/toast";
 import { formatTenge } from "@/lib/format";
+import { isPairOnly } from "@/lib/pair-only";
 
 type OrderLine = { productId: string | null; qty: number };
 
@@ -45,6 +46,7 @@ export default function RepeatOrderButton({ items }: { items: OrderLine[] }) {
           id: string;
           sku: string;
           name: string;
+          category: string | null;
           price: number;
           oldPrice: number | null;
           discountPct: number;
@@ -78,6 +80,8 @@ export default function RepeatOrderButton({ items }: { items: OrderLine[] }) {
               oldPrice: p.oldPrice,
               discountPct: p.discountPct,
               imageUrl: p.imageUrl,
+              // Пары (диски UIDNU): стор сам приведёт количество к чётному.
+              pairOnly: isPairOnly(p.category),
             },
             line.qty
           );

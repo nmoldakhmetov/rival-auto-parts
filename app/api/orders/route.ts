@@ -5,7 +5,9 @@ import { buildWaLink } from "@/lib/whatsapp";
 import { formatTenge } from "@/lib/format";
 import { getDiscountContext } from "@/lib/pricing";
 import { sendOrderToOneC } from "@/lib/onec-orders";
-import { getActiveGiftRules, earnedGiftIds } from "@/lib/gifts";
+import { getActiveGiftRules } from "@/lib/gifts";
+import { earnedGiftQty } from "@/lib/gift-earn";
+import { isPairOnly, snapPairQty } from "@/lib/pair-only";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +64,9 @@ export async function POST(req: NextRequest) {
   for (const i of incoming) {
     const p = byId.get(i.productId);
     if (!p) continue;
-    const qty = Math.max(1, Math.trunc(Number(i.qty) || 1));
+    let qty = Math.max(1, Math.trunc(Number(i.qty) || 1));
+    // «Диски UIDNU» are sold strictly in pairs — snap to even (min 2).
+    if (isPairOnly(p.category)) qty = snapPairQty(qty);
     const price = Math.round(Number(p.price) * (1 - disc.pctFor(p) / 100));
     total += price * qty;
     qtyById.set(p.id, (qtyById.get(p.id) ?? 0) + qty);
@@ -84,25 +88,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Gifts: any rule whose trigger product reached its threshold adds its gift
-  // products to the order for free (price 0). Computed server-side — never
-  // trust the client. A gift the buyer also paid for is still added (free copy).
+  // Gifts: every full `minQty` of a trigger product earns one more set of the
+  // rule's gift products, free (price 0). Computed server-side — never trust
+  // the client. A gift the buyer also paid for is still added (free copies).
   const giftRules = await getActiveGiftRules();
-  const giftIds = earnedGiftIds(giftRules, qtyById);
-  if (giftIds.length > 0) {
+  const earned = earnedGiftQty(giftRules, qtyById);
+  if (earned.size > 0) {
     const giftProducts = await prisma.product.findMany({
-      where: { id: { in: giftIds } },
+      where: { id: { in: [...earned.keys()] } },
     });
     for (const gp of giftProducts) {
+      const giftQty = earned.get(gp.id) ?? 1;
       orderItems.push({
         productId: gp.id,
         sku: gp.sku,
         name: gp.name,
         price: 0,
-        qty: 1,
+        qty: giftQty,
         isGift: true,
       });
-      onecProducts.push({ code: gp.code, sku: gp.sku, qty: 1, price: 0 });
+      onecProducts.push({ code: gp.code, sku: gp.sku, qty: giftQty, price: 0 });
     }
   }
 

@@ -31,9 +31,11 @@ type ProductLite = {
   fullName: string | null;
 };
 type Target = "ALL" | "PRODUCT" | "CATEGORY" | "BRAND";
+type Kind = "DISCOUNT" | "MARKUP";
 type Rule = {
   id: string;
   name: string | null;
+  kind: Kind;
   percent: number;
   userId: string | null;
   clientName: string | null;
@@ -73,6 +75,7 @@ export default function DiscountsManager({
   // form state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<Kind>("DISCOUNT");
   const [percent, setPercent] = useState("10");
   const [toAll, setToAll] = useState(!ownClientsOnly); // true = всем клиентам
   const [clientId, setClientId] = useState("");
@@ -140,6 +143,7 @@ export default function DiscountsManager({
   function resetForm() {
     setEditingId(null);
     setName("");
+    setKind("DISCOUNT");
     setPercent("10");
     setToAll(!ownClientsOnly);
     setClientId("");
@@ -156,6 +160,7 @@ export default function DiscountsManager({
   function startEdit(r: Rule) {
     setEditingId(r.id);
     setName(r.name ?? "");
+    setKind(r.kind ?? "DISCOUNT");
     setPercent(String(r.percent));
     setToAll(!r.userId);
     setClientId(r.userId ?? "");
@@ -181,7 +186,11 @@ export default function DiscountsManager({
     setError("");
     const pct = parseInt(percent, 10);
     if (!Number.isFinite(pct) || pct < 1 || pct > 95) {
-      setError("Процент скидки должен быть от 1 до 95");
+      setError(
+        kind === "MARKUP"
+          ? "Процент наценки должен быть от 1 до 95"
+          : "Процент скидки должен быть от 1 до 95"
+      );
       return;
     }
     if (!toAll && !clientId) {
@@ -204,6 +213,7 @@ export default function DiscountsManager({
     try {
       const payload = {
         name: name.trim() || null,
+        kind,
         percent: pct,
         userId: toAll ? null : clientId,
         target,
@@ -236,7 +246,7 @@ export default function DiscountsManager({
   }
 
   async function remove(id: string) {
-    if (!confirm("Удалить скидку?")) return;
+    if (!confirm("Удалить правило?")) return;
     await fetch(`/api/admin/discounts/${id}`, { method: "DELETE" });
     if (editingId === id) resetForm();
     await load();
@@ -267,10 +277,11 @@ export default function DiscountsManager({
           <Percent size={22} className="text-accent" /> Скидки
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Скидки всем клиентам или конкретному клиенту — на весь каталог,
-          отдельные товары, категорию или марку. Если подходит несколько скидок,
-          берётся наибольшая; снижение цены при синхронизации с 1С прибавляется
-          сверху.
+          Скидки (−%) и наценки (+%) всем клиентам или конкретному клиенту — на
+          весь каталог, отдельные товары, категорию или марку. Из подходящих
+          правил каждого типа берётся наибольшее; итог = скидка минус наценка.
+          Наценка, в отличие от скидки, действует и на товары с финальной ценой
+          из 1С.
         </p>
       </div>
 
@@ -281,7 +292,7 @@ export default function DiscountsManager({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-bold text-ink">
-            {editingId ? "Редактирование скидки" : "Новая скидка"}
+            {editingId ? "Редактирование правила" : "Новое правило"}
           </h2>
           {editingId && (
             <button
@@ -294,11 +305,56 @@ export default function DiscountsManager({
         </div>
 
         <div className="space-y-4">
+          {/* kind: discount / markup */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted">
+              Тип правила
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setKind("DISCOUNT")}
+                className={cx(
+                  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                  kind === "DISCOUNT"
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-line text-muted hover:border-accent/40"
+                )}
+              >
+                Скидка&nbsp;
+                <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                  −%
+                </span>
+              </button>
+              <button
+                onClick={() => setKind("MARKUP")}
+                className={cx(
+                  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                  kind === "MARKUP"
+                    ? "border-ink bg-ink/5 text-ink"
+                    : "border-line text-muted hover:border-ink/40"
+                )}
+              >
+                Наценка&nbsp;
+                <span className="rounded-full bg-ink px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                  +%
+                </span>
+              </button>
+            </div>
+            {kind === "MARKUP" && (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-amber-700">
+                Наценка применяется ко всем товарам, включая позиции с финальной
+                ценой из 1С (у которых скидки не действуют). Клиент увидит уже
+                повышенную цену без пометок.
+              </p>
+            )}
+          </div>
+
           {/* percent + name */}
           <div className="flex flex-wrap gap-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-muted">
-                Размер скидки <span className="text-accent">*</span>
+                {kind === "MARKUP" ? "Размер наценки" : "Размер скидки"}{" "}
+                <span className="text-accent">*</span>
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -501,7 +557,7 @@ export default function DiscountsManager({
               onChange={(e) => setActive(e.target.checked)}
               className="h-4 w-4 accent-accent"
             />
-            Скидка активна
+            Правило активно
           </label>
 
           {error && (
@@ -517,7 +573,7 @@ export default function DiscountsManager({
               ) : (
                 <Save size={16} />
               )}
-              {editingId ? "Сохранить изменения" : "Создать скидку"}
+              {editingId ? "Сохранить изменения" : "Создать правило"}
             </button>
             {!editingId && (
               <button
@@ -534,7 +590,7 @@ export default function DiscountsManager({
       {/* ── List ───────────────────────────────────────────── */}
       <div>
         <h2 className="mb-3 text-sm font-bold text-ink">
-          Действующие скидки ({rules.length})
+          Действующие правила ({rules.length})
         </h2>
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted">
@@ -556,8 +612,17 @@ export default function DiscountsManager({
                     r.active ? "border-line" : "border-line opacity-60"
                   )}
                 >
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-sm font-extrabold text-accent">
-                    −{r.percent}%
+                  <div
+                    className={cx(
+                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-sm font-extrabold",
+                      r.kind === "MARKUP"
+                        ? "bg-ink/10 text-ink"
+                        : "bg-accent/10 text-accent"
+                    )}
+                    title={r.kind === "MARKUP" ? "Наценка" : "Скидка"}
+                  >
+                    {r.kind === "MARKUP" ? "+" : "−"}
+                    {r.percent}%
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

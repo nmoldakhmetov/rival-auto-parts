@@ -11,15 +11,17 @@ export function formatNum(value: number): string {
 }
 
 // Discount badge text: "−15%" or "−1 234 ₸" depending on the admin-chosen
-// display mode (Setting `discount_display`: percent | amount).
+// display mode (Setting `discount_display`: percent | amount). `pct` is the
+// 1С promo drop only (see lib/pricing.ts) — the amount is derived from it so
+// the badge never leaks the client's personal discount.
 export function formatDiscount(
   mode: string | undefined,
   pct: number,
   oldPrice: number | null | undefined,
-  price: number
+  _price: number
 ): string {
-  if (mode === "amount" && oldPrice != null && oldPrice > price) {
-    return `−${formatTenge(oldPrice - price)}`;
+  if (mode === "amount" && oldPrice != null && pct > 0) {
+    return `−${formatTenge(Math.round((oldPrice * pct) / 100))}`;
   }
   return `−${pct}%`;
 }

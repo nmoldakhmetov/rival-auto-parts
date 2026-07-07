@@ -10,6 +10,8 @@ import {
   RefreshCw,
   Tags,
   Timer,
+  Truck,
+  Undo2,
 } from "lucide-react";
 
 const SYNC_PRESETS: { value: string; label: string }[] = [
@@ -24,6 +26,9 @@ const SYNC_PRESETS: { value: string; label: string }[] = [
 
 export default function SettingsForm() {
   const [blockedMessage, setBlockedMessage] = useState("");
+  const [warehouseTooltip, setWarehouseTooltip] = useState("");
+  const [returnPolicyDefault, setReturnPolicyDefault] = useState("");
+  const [returnPolicyGift, setReturnPolicyGift] = useState("");
   const [globalDiscount, setGlobalDiscount] = useState("0");
   const [syncCron, setSyncCron] = useState("*/30 * * * *");
   const [customCron, setCustomCron] = useState(false);
@@ -40,6 +45,9 @@ export default function SettingsForm() {
       .then((r) => r.json())
       .then((d) => {
         setBlockedMessage(d.settings?.blocked_message ?? "");
+        setWarehouseTooltip(d.settings?.warehouse_tooltip ?? "");
+        setReturnPolicyDefault(d.settings?.return_policy_default ?? "");
+        setReturnPolicyGift(d.settings?.return_policy_gift ?? "");
         setGlobalDiscount(d.settings?.global_discount ?? "0");
         const cron = d.settings?.sync_cron ?? "*/30 * * * *";
         setSyncCron(cron);
@@ -66,6 +74,9 @@ export default function SettingsForm() {
         body: JSON.stringify({
           settings: {
             blocked_message: blockedMessage,
+            warehouse_tooltip: warehouseTooltip,
+            return_policy_default: returnPolicyDefault,
+            return_policy_gift: returnPolicyGift,
             global_discount: String(
               Math.max(0, Math.min(95, parseInt(globalDiscount) || 0))
             ),
@@ -267,6 +278,53 @@ export default function SettingsForm() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Warehouse delivery tooltip */}
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-ink">
+          <Truck size={15} className="text-accent" /> Подсказка при наведении на
+          склад
+        </h2>
+        <p className="mb-3 text-xs text-muted">
+          Показывается клиенту при наведении курсора на любой склад в карточке
+          товара (условия доставки). Пустой текст отключает подсказку.
+        </p>
+        <textarea
+          value={warehouseTooltip}
+          onChange={(e) => setWarehouseTooltip(e.target.value)}
+          rows={3}
+          className="input resize-none"
+        />
+      </div>
+
+      {/* Return policy texts */}
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-ink">
+          <Undo2 size={15} className="text-accent" /> Условия возврата в корзине
+        </h2>
+        <p className="mb-3 text-xs text-muted">
+          Показываются клиенту при оформлении заказа. Второй вариант выводится,
+          когда в заказе есть подарок по акции.
+        </p>
+        <label className="mb-1 block text-[11px] font-semibold text-ink">
+          Обычный заказ
+        </label>
+        <textarea
+          value={returnPolicyDefault}
+          onChange={(e) => setReturnPolicyDefault(e.target.value)}
+          rows={2}
+          className="input mb-3 resize-none"
+        />
+        <label className="mb-1 block text-[11px] font-semibold text-ink">
+          Заказ с подарком по акции
+        </label>
+        <textarea
+          value={returnPolicyGift}
+          onChange={(e) => setReturnPolicyGift(e.target.value)}
+          rows={2}
+          className="input resize-none"
+        />
       </div>
 
       {/* Block message */}

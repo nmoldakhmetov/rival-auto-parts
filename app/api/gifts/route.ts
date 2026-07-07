@@ -19,9 +19,25 @@ export async function GET() {
     return NextResponse.json({ rules: [], giftProducts: {}, discountDisplay: "percent" });
   }
 
+  // Return-policy texts for the cart (admin-editable; variant picked client-side).
+  const [returnPolicyDefault, returnPolicyGift] = await Promise.all([
+    cached("cfg:return_policy_default", 60_000, () =>
+      getSetting("return_policy_default")
+    ),
+    cached("cfg:return_policy_gift", 60_000, () =>
+      getSetting("return_policy_gift")
+    ),
+  ]);
+
   const rules = await getActiveGiftRules();
   if (rules.length === 0) {
-    return NextResponse.json({ rules: [], giftProducts: {}, discountDisplay: "percent" });
+    return NextResponse.json({
+      rules: [],
+      giftProducts: {},
+      discountDisplay: "percent",
+      returnPolicyDefault,
+      returnPolicyGift,
+    });
   }
 
   const giftIds = [...new Set(rules.flatMap((r) => r.giftIds))];
@@ -105,5 +121,11 @@ export async function GET() {
     }))
     .filter((r) => r.giftIds.length > 0);
 
-  return NextResponse.json({ rules: valid, giftProducts, discountDisplay });
+  return NextResponse.json({
+    rules: valid,
+    giftProducts,
+    discountDisplay,
+    returnPolicyDefault,
+    returnPolicyGift,
+  });
 }

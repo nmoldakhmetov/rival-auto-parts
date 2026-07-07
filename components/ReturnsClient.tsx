@@ -48,9 +48,12 @@ const REASONS = [
 export default function ReturnsClient({
   orderItems,
   warehouses,
+  embedded,
 }: {
   orderItems: OrderItem[];
   warehouses: string[];
+  // Rendered inside the «Мои заказы» tabs: no own page padding / heading.
+  embedded?: boolean;
 }) {
   const [returns, setReturns] = useState<ReturnRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,11 +117,15 @@ export default function ReturnsClient({
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-6">
-      <h1 className="mb-1 text-xl font-bold text-ink">Возвраты</h1>
-      <p className="mb-5 text-xs text-muted">
-        Оформление заявки на возврат по купленным товарам.
-      </p>
+    <div className={embedded ? undefined : "mx-auto max-w-5xl px-6 py-6"}>
+      {!embedded && (
+        <>
+          <h1 className="mb-1 text-xl font-bold text-ink">Возвраты</h1>
+          <p className="mb-5 text-xs text-muted">
+            Оформление заявки на возврат по купленным товарам.
+          </p>
+        </>
+      )}
 
       {/* New return */}
       <form

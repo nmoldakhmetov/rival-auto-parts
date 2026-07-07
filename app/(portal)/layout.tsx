@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -5,6 +6,7 @@ import { getSetting } from "@/lib/settings";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import CartSync from "@/components/CartSync";
+import SearchReset from "@/components/SearchReset";
 import BlockOverlay from "@/components/BlockOverlay";
 import Toasts from "@/components/Toasts";
 
@@ -45,6 +47,9 @@ export default async function PortalLayout({
   return (
     <div className="flex h-screen overflow-hidden">
       <CartSync enabled={session.role === "CLIENT"} />
+      <Suspense fallback={null}>
+        <SearchReset />
+      </Suspense>
       <Sidebar
         role={session.role}
         fullName={session.fullName}

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { snapPairQty } from "@/lib/pair-only";
 
 export type CartItem = {
   productId: string;
@@ -9,8 +10,9 @@ export type CartItem = {
   name: string;
   price: number; // цена для клиента (уже со скидкой)
   oldPrice?: number | null; // зачёркнутая цена, если есть скидка
-  discountPct?: number; // суммарная скидка, % (для плашки в корзине)
+  discountPct?: number; // скидка 1С, % (для плашки в корзине)
   imageUrl?: string | null;
+  pairOnly?: boolean; // «Диски UIDNU»: строго чётное количество (шаг 2)
   qty: number;
 };
 
@@ -28,6 +30,9 @@ export const useCart = create<CartState>()(
       items: [],
       add: (item, qty = 1) =>
         set((state) => {
+          // Pair-only items always hold an even quantity (min 2).
+          const clamp = (n: number) =>
+            item.pairOnly ? snapPairQty(n) : Math.max(1, n);
           const existing = state.items.find(
             (i) => i.productId === item.productId
           );
@@ -35,17 +40,19 @@ export const useCart = create<CartState>()(
             return {
               items: state.items.map((i) =>
                 i.productId === item.productId
-                  ? { ...i, qty: i.qty + qty }
+                  ? { ...i, qty: clamp(i.qty + qty) }
                   : i
               ),
             };
           }
-          return { items: [...state.items, { ...item, qty }] };
+          return { items: [...state.items, { ...item, qty: clamp(qty) }] };
         }),
       setQty: (productId, qty) =>
         set((state) => ({
           items: state.items.map((i) =>
-            i.productId === productId ? { ...i, qty: Math.max(1, qty) } : i
+            i.productId === productId
+              ? { ...i, qty: i.pairOnly ? snapPairQty(qty) : Math.max(1, qty) }
+              : i
           ),
         })),
       remove: (productId) =>

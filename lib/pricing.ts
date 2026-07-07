@@ -12,19 +12,44 @@ export type PricingProduct = {
 };
 
 export type DiscountContext = {
-  // Effective discount % for a given product (already capped at 95).
+  // NET percent for a product, capped to [-95, 95]: positive = скидка,
+  // negative = наценка (final price = base × (1 − pct/100)).
   pctFor: (p: PricingProduct) => number;
 };
 
 const NONE: DiscountContext = { pctFor: () => 0 };
 
-// Builds the discount context for a client once, then resolves the best
-// applicable percent per product. Sources (the LARGEST wins):
+// Per-scope best-percent accumulator (ALL / CATEGORY / BRAND / PRODUCT), used
+// for both discounts and markups. The LARGEST applicable percent wins.
+type ScopeMaps = {
+  all: number;
+  byCategory: Map<string, number>;
+  byBrand: Map<string, number>;
+  byProduct: Map<string, number>;
+};
+const emptyScope = (): ScopeMaps => ({
+  all: 0,
+  byCategory: new Map(),
+  byBrand: new Map(),
+  byProduct: new Map(),
+});
+const bestFor = (s: ScopeMaps, p: PricingProduct): number => {
+  let pct = s.all;
+  if (p.category) pct = Math.max(pct, s.byCategory.get(p.category) ?? 0);
+  if (p.brand) pct = Math.max(pct, s.byBrand.get(p.brand) ?? 0);
+  pct = Math.max(pct, s.byProduct.get(p.id) ?? 0);
+  return Math.min(95, pct);
+};
+
+// Builds the pricing context for a client once, then resolves the NET percent
+// per product: best discount minus best markup (negative net = наценка).
+// Discount sources (the LARGEST wins):
 //   • Setting `global_discount`        — всем клиентам, на всё
 //   • User.discountPercent             — этому клиенту, на всё
-//   • DiscountRule (active)            — всем (userId=null) или этому клиенту,
-//     с целью ALL / PRODUCT / CATEGORY / BRAND
-// Staff (ADMIN/MANAGER) get no discount.
+//   • DiscountRule kind=DISCOUNT       — всем (userId=null) или этому клиенту
+// Markup: DiscountRule kind=MARKUP, same scoping — and, critically, it applies
+// to EVERY product, including isFinalPrice (which blocks discounts only).
+// Staff (ADMIN/MANAGER/…) see base prices.
 export async function getDiscountContext(
   userId: string,
   role: string
@@ -43,47 +68,37 @@ export async function getDiscountContext(
     }),
   ]);
 
-  let baseAll = Math.max(me?.discountPercent ?? 0, parseInt(globalStr, 10) || 0);
-  const byCategory = new Map<string, number>();
-  const byBrand = new Map<string, number>();
-  const byProduct = new Map<string, number>();
+  const disc = emptyScope();
+  const markup = emptyScope();
+  disc.all = Math.max(me?.discountPercent ?? 0, parseInt(globalStr, 10) || 0);
 
   const bump = (m: Map<string, number>, k: string, v: number) =>
     m.set(k, Math.max(m.get(k) ?? 0, v));
 
   for (const r of rules) {
-    const pct = r.percent;
+    const scope = r.kind === "MARKUP" ? markup : disc;
     switch (r.target) {
       case "ALL":
-        baseAll = Math.max(baseAll, pct);
+        scope.all = Math.max(scope.all, r.percent);
         break;
       case "CATEGORY":
-        if (r.category) bump(byCategory, r.category, pct);
+        if (r.category) bump(scope.byCategory, r.category, r.percent);
         break;
       case "BRAND":
-        if (r.brand) bump(byBrand, r.brand, pct);
+        if (r.brand) bump(scope.byBrand, r.brand, r.percent);
         break;
       case "PRODUCT":
-        for (const p of r.products) bump(byProduct, p.productId, pct);
+        for (const p of r.products) bump(scope.byProduct, p.productId, r.percent);
         break;
     }
   }
 
-  const hasTargeted =
-    byCategory.size > 0 || byBrand.size > 0 || byProduct.size > 0;
-  if (!hasTargeted) {
-    const flat = Math.min(95, baseAll);
-    return { pctFor: (p) => (p.isFinalPrice ? 0 : flat) };
-  }
-
   return {
     pctFor: (p) => {
-      if (p.isFinalPrice) return 0; // финальная цена из 1С — без скидок
-      let pct = baseAll;
-      if (p.category) pct = Math.max(pct, byCategory.get(p.category) ?? 0);
-      if (p.brand) pct = Math.max(pct, byBrand.get(p.brand) ?? 0);
-      pct = Math.max(pct, byProduct.get(p.id) ?? 0);
-      return Math.min(95, pct);
+      // isFinalPrice blocks the discount — but NEVER the markup.
+      const d = p.isFinalPrice ? 0 : bestFor(disc, p);
+      const m = bestFor(markup, p);
+      return Math.max(-95, Math.min(95, d - m));
     },
   };
 }
@@ -94,8 +109,12 @@ export type PricedFields = {
   discountPct: number;
 };
 
-// Combines the client discount with any price drop from the last 1С sync.
-// The sync-drop % SUMS on top of the client discount (capped at 95%).
+// Pricing vs display are deliberately split:
+//  • price   — the client's personal price: the 1С base (which already
+//    reflects any sync price drop) minus the client's personal %.
+//  • badge   — the strike-through/percent badge shows ONLY the 1С promo drop.
+//    The personal discount is invisible in the UI: no 1С drop → no badge at
+//    all, even when a personal discount lowered the price.
 export function priceFor(
   base: number,
   oldPriceRaw: number | null,
@@ -104,11 +123,10 @@ export function priceFor(
   const old = oldPriceRaw != null ? Number(oldPriceRaw) : null;
   const syncDropPct =
     old != null && old > base ? Math.round(((old - base) / old) * 100) : 0;
-  const totalPct = Math.min(95, clientDiscPct + syncDropPct);
   const finalPrice = Math.round(base * (1 - clientDiscPct / 100));
   return {
     price: finalPrice,
-    oldPrice: totalPct > 0 ? (old != null && old > base ? old : base) : null,
-    discountPct: totalPct,
+    oldPrice: syncDropPct > 0 ? old : null,
+    discountPct: syncDropPct,
   };
 }

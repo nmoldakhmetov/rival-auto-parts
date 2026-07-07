@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { isPairOnly, snapPairQty } from "@/lib/pair-only";
 
 export const dynamic = "force-dynamic";
 
@@ -31,18 +32,25 @@ export async function PUT(req: NextRequest) {
     ids.length > 0
       ? await prisma.product.findMany({
           where: { id: { in: ids } },
-          select: { id: true },
+          select: { id: true, category: true },
         })
       : [];
   const existingIds = new Set(existing.map((p) => p.id));
+  const pairIds = new Set(
+    existing.filter((p) => isPairOnly(p.category)).map((p) => p.id)
+  );
 
   const data = incoming
     .filter((i) => i.productId && existingIds.has(i.productId))
-    .map((i) => ({
-      userId: session.sub,
-      productId: i.productId as string,
-      qty: Math.max(1, Math.trunc(Number(i.qty) || 1)),
-    }));
+    .map((i) => {
+      const raw = Math.max(1, Math.trunc(Number(i.qty) || 1));
+      return {
+        userId: session.sub,
+        productId: i.productId as string,
+        // «Диски UIDNU»: строго чётное количество и на сервере тоже.
+        qty: pairIds.has(i.productId as string) ? snapPairQty(raw) : raw,
+      };
+    });
 
   await prisma.$transaction([
     prisma.savedCartItem.deleteMany({ where: { userId: session.sub } }),

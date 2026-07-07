@@ -27,6 +27,7 @@ export async function GET() {
     rules: rules.map((r) => ({
       id: r.id,
       name: r.name,
+      kind: r.kind,
       percent: r.percent,
       userId: r.userId,
       clientName: r.user?.fullName ?? null,

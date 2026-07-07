@@ -19,4 +19,7 @@ export type CatalogRow = {
   viaAnalog: { code: string; brand: string | null } | null;
   pinned: boolean;
   badge: "NEW" | "HIT" | null;
+  // The search query equals this product's sku/code/fullName (search route
+  // pins such rows to the top of page 1; the UI highlights them).
+  exactMatch?: boolean;
 };

@@ -5,15 +5,19 @@ import { Minus, Plus } from "lucide-react";
 
 // Quantity selector shown once a product is in the cart. The number is a real
 // editable field, so a wholesale buyer can type e.g. 200 right in the catalog
-// instead of tapping + hundreds of times. − at 1 removes the item.
+// instead of tapping + hundreds of times. − at the minimum removes the item.
+// `step` > 1 (pair-only goods) makes ± move by that step; typed values are
+// committed on blur/Enter and snapped to the step by the cart store.
 export default function CartQtySelector({
   qty,
   onSet,
   onRemove,
+  step = 1,
 }: {
   qty: number;
   onSet: (n: number) => void;
   onRemove: () => void;
+  step?: number;
 }) {
   const [draft, setDraft] = useState(String(qty));
   // Reflect external changes (±, edits elsewhere) back into the field.
@@ -24,21 +28,32 @@ export default function CartQtySelector({
   function change(raw: string) {
     const digits = raw.replace(/\D/g, "").slice(0, 6);
     setDraft(digits);
+    if (step > 1) return; // stepped items commit on blur/Enter (store snaps)
     const n = parseInt(digits, 10);
     if (Number.isFinite(n) && n >= 1) onSet(Math.min(n, 100000));
   }
-  // On blur, an empty / zero field snaps back to the current quantity
-  // (removal is the minus button's job, never an accidental empty input).
+  // On blur, commit stepped input / snap an empty or zero field back to the
+  // current quantity (removal is the minus button's job, never empty input).
   function normalize() {
     const n = parseInt(draft, 10);
-    if (!Number.isFinite(n) || n < 1) setDraft(String(qty));
+    if (!Number.isFinite(n) || n < 1) {
+      setDraft(String(qty));
+      return;
+    }
+    if (step > 1) {
+      onSet(Math.min(n, 100000));
+      setDraft(String(qty)); // store snap re-syncs via the effect above
+    }
   }
 
   return (
-    <div className="flex h-9 w-full items-center justify-between rounded-md bg-gray-100">
+    <div
+      className="flex h-9 w-full items-center justify-between rounded-md bg-gray-100"
+      title={step > 1 ? `Продаётся только парами — шаг ${step} шт` : undefined}
+    >
       <button
-        onClick={() => (qty <= 1 ? onRemove() : onSet(qty - 1))}
-        title={qty > 1 ? "Уменьшить" : "Убрать из корзины"}
+        onClick={() => (qty <= step ? onRemove() : onSet(qty - step))}
+        title={qty > step ? "Уменьшить" : "Убрать из корзины"}
         className="flex h-full w-10 shrink-0 items-center justify-center rounded-l-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink"
       >
         <Minus size={16} />
@@ -57,7 +72,7 @@ export default function CartQtySelector({
         className="h-full min-w-0 flex-1 bg-transparent text-center text-base font-semibold tabular-nums text-gray-900 outline-none"
       />
       <button
-        onClick={() => onSet(qty + 1)}
+        onClick={() => onSet(qty + step)}
         title="Добавить ещё"
         className="flex h-full w-10 shrink-0 items-center justify-center rounded-r-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink"
       >

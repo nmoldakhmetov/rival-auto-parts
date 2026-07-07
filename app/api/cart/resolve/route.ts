@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       id: p.id,
       sku: p.sku,
       name: p.name,
+      category: p.category,
       price: priced.price,
       oldPrice: priced.oldPrice,
       discountPct: priced.discountPct,

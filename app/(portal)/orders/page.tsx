@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Undo2 } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatTenge, formatDateTime } from "@/lib/format";
 import RepeatOrderButton from "@/components/RepeatOrderButton";
+import ReturnsClient from "@/components/ReturnsClient";
 import type { OrderStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -32,9 +33,51 @@ const STATUS: Record<OrderStatus, { label: string; cls: string }> = {
   CANCELLED: { label: "Отменён", cls: "bg-gray-100 text-muted border-line" },
 };
 
-export default async function OrdersPage() {
+// Tab pill (server-rendered link; the active tab lives in the URL, so tabs
+// are shareable and the back button works).
+function TabLink({
+  href,
+  active,
+  Icon,
+  label,
+  count,
+}: {
+  href: string;
+  active: boolean;
+  Icon: typeof ClipboardList;
+  label: string;
+  count: number;
+}) {
+  return (
+    <Link
+      href={href}
+      className={
+        active
+          ? "flex items-center gap-1.5 rounded-md border border-accent bg-accent px-3 py-1.5 text-xs font-medium text-white shadow-sm"
+          : "flex items-center gap-1.5 rounded-md border border-line bg-white px-3 py-1.5 text-xs font-medium text-muted transition-all duration-200 hover:border-gray-300 hover:bg-gray-50 hover:text-ink"
+      }
+    >
+      <Icon size={14} />
+      {label}
+      <span className={active ? "text-white/80" : "text-gray-400"}>
+        ({count})
+      </span>
+    </Link>
+  );
+}
+
+// «Мои заказы» with two tabs: order history and the client's returns (the
+// returns section moved here from a standalone sidebar entry).
+export default async function OrdersPage({
+  searchParams,
+}: {
+  searchParams: { tab?: string };
+}) {
   const session = await getSession();
   if (!session) redirect("/login");
+
+  const isClient = session.role === "CLIENT";
+  const tab = isClient && searchParams.tab === "returns" ? "returns" : "orders";
 
   const orders = await prisma.order.findMany({
     where: { userId: session.sub },
@@ -42,11 +85,72 @@ export default async function OrdersPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  return (
-    <div className="px-6 py-6">
-      <h1 className="mb-4 text-xl font-bold text-ink">Мои заказы</h1>
+  const returnsCount = isClient
+    ? await prisma.return.count({ where: { userId: session.sub } })
+    : 0;
 
-      {orders.length === 0 ? (
+  // ─── Returns tab data (only when it is actually open) ────────────────────
+  let orderItems: {
+    productId: string | null;
+    sku: string;
+    name: string;
+    price: number;
+  }[] = [];
+  let warehouses: string[] = [];
+  if (tab === "returns") {
+    const seen = new Set<string>();
+    for (const o of orders.slice(0, 50)) {
+      for (const it of o.items) {
+        const key = it.productId ?? it.sku;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        orderItems.push({
+          productId: it.productId,
+          sku: it.sku,
+          name: it.name,
+          price: Number(it.price),
+        });
+      }
+    }
+    const access = await prisma.clientWarehouseAccess.findMany({
+      where: { userId: session.sub },
+      include: { warehouse: { select: { name: true } } },
+    });
+    warehouses = access.map((a) => a.warehouse.name);
+  }
+
+  return (
+    <div className="px-4 py-4 sm:px-6 sm:py-6">
+      <h1 className="mb-3 text-xl font-bold text-ink">Мои заказы</h1>
+
+      {isClient && (
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          <TabLink
+            href="/orders"
+            active={tab === "orders"}
+            Icon={ClipboardList}
+            label="История заказов"
+            count={orders.length}
+          />
+          <TabLink
+            href="/orders?tab=returns"
+            active={tab === "returns"}
+            Icon={Undo2}
+            label="Мои возвраты"
+            count={returnsCount}
+          />
+        </div>
+      )}
+
+      {tab === "returns" ? (
+        <div className="max-w-5xl">
+          <ReturnsClient
+            orderItems={orderItems}
+            warehouses={warehouses}
+            embedded
+          />
+        </div>
+      ) : orders.length === 0 ? (
         <div className="rounded-lg border border-line bg-white py-20 text-center">
           <ClipboardList size={36} className="mx-auto mb-3 text-gray-300" />
           <p className="text-sm font-medium text-ink">Заказов пока нет</p>
@@ -86,23 +190,27 @@ export default async function OrdersPage() {
                     />
                   </div>
                 </div>
-                <table className="data-table">
-                  <tbody>
-                    {o.items.map((i) => (
-                      <tr key={i.id}>
-                        <td className="w-32 font-semibold text-ink">{i.sku}</td>
-                        <td className="text-muted">{i.name}</td>
-                        <td className="w-28 text-right">
-                          {formatTenge(Number(i.price))}
-                        </td>
-                        <td className="w-20 text-center">× {i.qty}</td>
-                        <td className="w-32 text-right font-semibold text-ink">
-                          {formatTenge(Number(i.price) * i.qty)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="data-table min-w-[560px]">
+                    <tbody>
+                      {o.items.map((i) => (
+                        <tr key={i.id}>
+                          <td className="w-32 font-semibold text-ink">
+                            {i.sku}
+                          </td>
+                          <td className="text-muted">{i.name}</td>
+                          <td className="w-28 text-right">
+                            {formatTenge(Number(i.price))}
+                          </td>
+                          <td className="w-20 text-center">× {i.qty}</td>
+                          <td className="w-32 text-right font-semibold text-ink">
+                            {formatTenge(Number(i.price) * i.qty)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 {o.comment && (
                   <div className="border-t border-line px-4 py-2 text-xs text-muted">
                     Комментарий: {o.comment}

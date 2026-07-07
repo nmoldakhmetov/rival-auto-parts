@@ -9,6 +9,7 @@ import { NOT_HIDDEN_CATEGORY } from "@/lib/categories";
 import { cached } from "@/lib/cache";
 import { getSetting } from "@/lib/settings";
 import { capStockForClient } from "@/lib/stock";
+import { getActiveGiftRules } from "@/lib/gifts";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
   const inStock = sp.get("inStock") === "1";
   const sort = sp.get("sort") ?? ""; // "" | price_asc | price_desc
   const broadcastId = (sp.get("broadcast") ?? "").trim(); // ограничить выдачу товарами рассылки
+  const promo = sp.get("promo") === "1"; // раздел «Акции»: подарки + скидки
   const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1);
   const PAGE_SIZE = 50;
 
@@ -81,9 +83,12 @@ export async function GET(req: NextRequest) {
   );
 
   // Display knobs (admin-adjustable, cached; settings PUT invalidates cfg:).
-  const [dropDaysStr, discountDisplay] = await Promise.all([
+  const [dropDaysStr, discountDisplay, warehouseTooltip] = await Promise.all([
     cached("cfg:price_drop_days", 60_000, () => getSetting("price_drop_days")),
     cached("cfg:discount_display", 60_000, () => getSetting("discount_display")),
+    cached("cfg:warehouse_tooltip", 60_000, () =>
+      getSetting("warehouse_tooltip")
+    ),
   ]);
   const dropDays = parseInt(dropDaysStr, 10) || 0;
   const nowMs = Date.now();
@@ -154,29 +159,138 @@ export async function GET(req: NextRequest) {
   }
   const where: Prisma.ProductWhereInput = { AND: and };
 
-  const skip = (page - 1) * PAGE_SIZE;
-  const [total, products] = await Promise.all([
-    prisma.product.count({ where }),
-    prisma.product.findMany({
-      where,
-      include: {
-        stocks: {
-          where: allowedWhIds ? { warehouseId: { in: allowedWhIds } } : undefined,
-          include: { warehouse: { select: { name: true } } },
-          orderBy: { warehouse: { name: "asc" } },
-        },
-      },
-      // An explicit price sort overrides the pinned-first ordering.
-      orderBy:
-        sort === "price_asc"
-          ? [{ price: "asc" }, { name: "asc" }]
-          : sort === "price_desc"
-            ? [{ price: "desc" }, { name: "asc" }]
-            : [{ pinned: "desc" }, { pinnedAt: "desc" }, { name: "asc" }],
-      skip,
-      take: PAGE_SIZE,
-    }),
-  ]);
+  const stocksInclude = {
+    stocks: {
+      where: allowedWhIds
+        ? { warehouseId: { in: allowedWhIds } }
+        : undefined,
+      include: { warehouse: { select: { name: true } } },
+      orderBy: { warehouse: { name: "asc" as const } },
+    },
+  };
+  // An explicit price sort overrides the pinned-first ordering.
+  const orderBy =
+    sort === "price_asc"
+      ? [{ price: "asc" as const }, { name: "asc" as const }]
+      : sort === "price_desc"
+        ? [{ price: "desc" as const }, { name: "asc" as const }]
+        : [
+            { pinned: "desc" as const },
+            { pinnedAt: "desc" as const },
+            { name: "asc" as const },
+          ];
+
+  type ProductWithStocks = Awaited<
+    ReturnType<typeof prisma.product.findMany<{ include: typeof stocksInclude }>>
+  >;
+  let total: number;
+  let products: ProductWithStocks;
+  let exactSet = new Set<string>();
+
+  if (promo) {
+    // «Акции»: gift-trigger products first, then 1С-discounted ones. The two
+    // segments are paginated as one continuous list (gifts always on top).
+    const triggerIds = [
+      ...new Set((await getActiveGiftRules()).flatMap((r) => r.triggerIds)),
+    ];
+    const dropWhere: Prisma.ProductWhereInput =
+      dropDays > 0
+        ? {
+            oldPrice: { not: null },
+            priceDropAt: { gt: new Date(dropCutoffMs) },
+          }
+        : { oldPrice: { not: null } };
+
+    const giftWhere: Prisma.ProductWhereInput = {
+      AND: [...and, { id: { in: triggerIds } }],
+    };
+    const discWhere: Prisma.ProductWhereInput = {
+      AND: [
+        ...and,
+        dropWhere,
+        ...(triggerIds.length > 0 ? [{ id: { notIn: triggerIds } }] : []),
+      ],
+    };
+
+    const [giftTotal, discTotal] = await Promise.all([
+      triggerIds.length > 0 ? prisma.product.count({ where: giftWhere }) : 0,
+      prisma.product.count({ where: discWhere }),
+    ]);
+    total = giftTotal + discTotal;
+
+    const offset = (page - 1) * PAGE_SIZE;
+    const giftSkip = Math.min(offset, giftTotal);
+    const giftTake = Math.max(0, Math.min(PAGE_SIZE, giftTotal - offset));
+    const discSkip = Math.max(0, offset - giftTotal);
+    const discTake = PAGE_SIZE - giftTake;
+
+    const [giftProducts, discProducts] = await Promise.all([
+      giftTake > 0
+        ? prisma.product.findMany({
+            where: giftWhere,
+            include: stocksInclude,
+            orderBy,
+            skip: giftSkip,
+            take: giftTake,
+          })
+        : ([] as unknown as ProductWithStocks),
+      discTake > 0
+        ? prisma.product.findMany({
+            where: discWhere,
+            include: stocksInclude,
+            orderBy,
+            skip: discSkip,
+            take: discTake,
+          })
+        : ([] as unknown as ProductWithStocks),
+    ]);
+    products = [...giftProducts, ...discProducts];
+  } else {
+    // Exact match: the query IS the article/code/applicability (100% equality,
+    // case- and separator-insensitive). Such products are pulled out of the
+    // normal ordering and forced to the very top of page 1.
+    const normQ = q ? normalizeSmart(q) : "";
+    let exactProducts: ProductWithStocks = [] as unknown as ProductWithStocks;
+    if (q) {
+      const exactOr: Prisma.ProductWhereInput[] = [
+        { sku: { equals: q, mode: "insensitive" } },
+        { code: q },
+        { fullName: { equals: q, mode: "insensitive" } },
+      ];
+      if (normQ.length >= 2) exactOr.push({ skuNorm: normQ });
+      exactProducts = await prisma.product.findMany({
+        where: { AND: [...and, { OR: exactOr }] },
+        include: stocksInclude,
+        orderBy,
+        take: 10,
+      });
+    }
+    const exactIds = exactProducts.map((p) => p.id);
+    exactSet = new Set(exactIds);
+
+    // The rest of the results exclude the exact rows; pagination is laid out as
+    // [exact… + rest] on page 1, then plain PAGE_SIZE windows of the rest.
+    const restWhere: Prisma.ProductWhereInput =
+      exactIds.length > 0
+        ? { AND: [...and, { id: { notIn: exactIds } }] }
+        : where;
+    const skip =
+      page === 1 ? 0 : Math.max(0, (page - 1) * PAGE_SIZE - exactIds.length);
+    const take = page === 1 ? PAGE_SIZE - exactIds.length : PAGE_SIZE;
+
+    const [cnt, restProducts] = await Promise.all([
+      prisma.product.count({ where }),
+      prisma.product.findMany({
+        where: restWhere,
+        include: stocksInclude,
+        orderBy,
+        skip,
+        take,
+      }),
+    ]);
+    total = cnt;
+    products = page === 1 ? [...exactProducts, ...restProducts] : restProducts;
+  }
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const isClient = session.role === "CLIENT";
@@ -216,6 +330,7 @@ export async function GET(req: NextRequest) {
       badge:
         p.badge ??
         (p.newUntil != null && p.newUntil.getTime() > nowMs ? "NEW" : null),
+      exactMatch: exactSet.has(p.id),
     };
   });
 
@@ -236,5 +351,6 @@ export async function GET(req: NextRequest) {
     totalPages,
     shown: rows.length,
     discountDisplay,
+    warehouseTooltip,
   });
 }

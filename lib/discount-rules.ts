@@ -4,6 +4,7 @@
 
 export type RuleBody = {
   name?: string;
+  kind?: "DISCOUNT" | "MARKUP";
   percent?: number;
   userId?: string | null;
   target?: "ALL" | "PRODUCT" | "CATEGORY" | "BRAND";
@@ -15,9 +16,11 @@ export type RuleBody = {
 
 export const DISCOUNT_TARGETS = ["ALL", "PRODUCT", "CATEGORY", "BRAND"] as const;
 export type DiscountTargetT = (typeof DISCOUNT_TARGETS)[number];
+export type RuleKindT = "DISCOUNT" | "MARKUP";
 
 export type NormalizedRule = {
   name: string | null;
+  kind: RuleKindT;
   percent: number;
   userId: string | null;
   target: DiscountTargetT;
@@ -30,9 +33,15 @@ export type NormalizedRule = {
 export function normalizeRule(
   body: RuleBody
 ): { error: string } | { data: NormalizedRule } {
+  const kind: RuleKindT = body.kind === "MARKUP" ? "MARKUP" : "DISCOUNT";
   const percent = Math.trunc(Number(body.percent));
   if (!Number.isFinite(percent) || percent < 1 || percent > 95) {
-    return { error: "Процент скидки должен быть от 1 до 95" };
+    return {
+      error:
+        kind === "MARKUP"
+          ? "Процент наценки должен быть от 1 до 95"
+          : "Процент скидки должен быть от 1 до 95",
+    };
   }
   const target = DISCOUNT_TARGETS.includes(body.target as never)
     ? (body.target as DiscountTargetT)
@@ -56,6 +65,7 @@ export function normalizeRule(
   return {
     data: {
       name: body.name?.trim() || null,
+      kind,
       percent,
       userId: body.userId?.trim() ? body.userId.trim() : null,
       target,
