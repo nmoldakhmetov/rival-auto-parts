@@ -90,7 +90,7 @@ export default async function OrdersPage({
     : 0;
 
   // ─── Returns tab data (only when it is actually open) ────────────────────
-  let orderItems: {
+  const orderItems: {
     productId: string | null;
     sku: string;
     name: string;
