@@ -12,7 +12,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  ShoppingCart,
   ZoomIn,
   Replace,
   Heart,
@@ -26,7 +25,9 @@ import { useCart } from "@/store/cart";
 import { useSearch } from "@/store/search";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
-import { isPairOnly, PAIR_STEP } from "@/lib/pair-only";
+import { isPairOnly, snapPairQty, PAIR_STEP } from "@/lib/pair-only";
+import { addSearchHistory } from "@/lib/search-history";
+import AddToCartPanel from "@/components/AddToCartPanel";
 import { canEditCatalog } from "@/lib/permissions";
 import CartQtySelector from "@/components/CartQtySelector";
 import StockBadges from "@/components/StockBadges";
@@ -276,9 +277,25 @@ export default function Catalog({
   const [pageSize, setPageSize] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
 
-  // List view is the default everywhere the catalog opens (incl. deep links
-  // from broadcasts); the grid stays available via the toggle.
-  const [view, setView] = useState<ViewMode>("list");
+  // Grid is the default view everywhere the catalog opens (categories,
+  // broadcasts, «Акции»). An active search query flips to the list — it scans
+  // better for SKU/code lookups. Only empty↔non-empty query transitions flip
+  // the view, so a manual toggle mid-search is respected.
+  const [view, setView] = useState<ViewMode>("grid");
+  const viewQueryRef = useRef("");
+  useEffect(() => {
+    const q = query.trim();
+    const had = viewQueryRef.current !== "";
+    if ((q !== "") !== had) setView(q !== "" ? "list" : "grid");
+    viewQueryRef.current = q;
+  }, [query]);
+  // Local per-card qty picks (grid view): the amount is chosen on the card
+  // first — the displayed price multiplies live — and lands in the cart only
+  // when «В корзину» is pressed (see AddToCartPanel).
+  const [pickQty, setPickQty] = useState<Record<string, number>>({});
+  const setPick = (id: string, n: number) =>
+    // Same cap as the cart store / server (protects the order total).
+    setPickQty((m) => ({ ...m, [id]: Math.min(100_000, Math.max(1, n)) }));
   // Mobile-only filters drawer (on md+ the filter rail is always visible).
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -495,7 +512,16 @@ export default function Catalog({
     return () => clearTimeout(t);
   }, [query, make, model, category, categoryGroup, minPrice, maxPrice, inStock, sort, broadcastId, promoOnly, page]);
 
-  function handleAdd(row: CatalogRow) {
+  // Recent-searches history (Header dropdown): record once the query settles;
+  // intermediate prefixes are collapsed inside addSearchHistory anyway.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) return;
+    const t = setTimeout(() => addSearchHistory(q), 1500);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  function handleAdd(row: CatalogRow, qty?: number) {
     const pair = isPairOnly(row.category);
     add(
       {
@@ -509,7 +535,7 @@ export default function Catalog({
         imageUrl: row.imageUrl,
         pairOnly: pair,
       },
-      pair ? PAIR_STEP : 1
+      qty ?? (pair ? PAIR_STEP : 1)
     );
   }
 
@@ -606,7 +632,7 @@ export default function Catalog({
       {/* Slim header (the search lives in the global Header now) */}
       <div className="flex items-center justify-between gap-2 border-b border-line bg-white px-4 py-3 sm:gap-4 sm:px-6">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-ink">
+          <h1 className="truncate text-2xl font-bold text-ink">
             {heading ?? "Каталог запчастей"}
           </h1>
           <p className="truncate text-xs text-muted">
@@ -927,9 +953,12 @@ export default function Catalog({
                             <div className="font-semibold text-ink">
                               {row.sku}
                             </div>
-                            <div className="text-[11px] text-muted">
-                              код: {row.code}
-                            </div>
+                            {/* Внутренний код 1С — только для персонала. */}
+                            {role !== "CLIENT" && (
+                              <div className="text-[11px] text-muted">
+                                код: {row.code}
+                              </div>
+                            )}
                           </td>
                           <td>
                             {visibleCategory(row.category) ? (
@@ -982,14 +1011,14 @@ export default function Catalog({
                               <>
                                 {row.discountPct > 0 &&
                                   row.oldPrice != null && (
-                                    <div className="text-[10px] font-normal text-gray-400 line-through">
+                                    <div className="text-sm font-medium text-gray-400 line-through">
                                       {formatTenge(row.oldPrice * mult)}
                                     </div>
                                   )}
                                 <div className="flex items-center justify-end gap-1.5">
                                   {formatTenge(row.price * mult)}
                                   {row.discountPct > 0 && (
-                                    <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                    <span className="whitespace-nowrap rounded-full bg-accent px-2 py-1 text-xs font-bold leading-none text-white">
                                       {formatDiscount(
                                         discountDisplay,
                                         row.discountPct,
@@ -1003,7 +1032,7 @@ export default function Catalog({
                                 </div>
                                 {pair && (
                                   <div className="text-[10px] font-semibold text-muted">
-                                    за 2 шт
+                                    цена за 2шт
                                   </div>
                                 )}
                               </>
@@ -1109,12 +1138,14 @@ export default function Catalog({
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
                 {rows.map((row, i) => {
                   const qtyInCart = cartQtyById.get(row.id) ?? 0;
-                  const inCart = qtyInCart > 0;
                   const pct = row.discountPct;
                   const oldP = row.oldPrice;
-                  // «Диски UIDNU»: цена сразу за пару, шаг корзины 2.
+                  // «Диски UIDNU»: строго парами — шаг и минимум 2 шт.
                   const pair = isPairOnly(row.category);
-                  const mult = pair ? 2 : 1;
+                  const step = pair ? PAIR_STEP : 1;
+                  // Locally picked qty (committed by «В корзину»); the card
+                  // price below multiplies by it live.
+                  const selQty = pickQty[row.id] ?? step;
                   const desc =
                     row.fullName || (role === "CLIENT" ? "" : row.name);
                   return (
@@ -1166,7 +1197,10 @@ export default function Catalog({
 
                       <div className="flex flex-1 flex-col p-4">
                         <div className="flex items-start justify-between gap-2">
-                          <span className="shrink-0 font-bold text-ink">
+                          <span
+                            title={row.sku}
+                            className="min-w-0 truncate font-bold text-ink"
+                          >
                             {row.sku}
                           </span>
                           {visibleCategory(row.category) && (
@@ -1208,26 +1242,30 @@ export default function Catalog({
                             <div className="mb-2.5">
                               {pct > 0 && oldP != null && (
                                 <div className="mb-0.5 flex items-center gap-2">
-                                  <span className="text-sm text-gray-400 line-through">
-                                    {formatTenge(oldP * mult)}
+                                  <span className="text-base font-medium text-gray-400 line-through">
+                                    {formatTenge(oldP * selQty)}
                                   </span>
-                                  <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                  <span className="whitespace-nowrap rounded-full bg-accent px-2 py-1 text-xs font-bold leading-none text-white">
                                     {formatDiscount(
                                       discountDisplay,
                                       pct,
-                                      oldP * mult,
-                                      row.price * mult
+                                      oldP * selQty,
+                                      row.price * selQty
                                     )}
                                   </span>
                                 </div>
                               )}
                               <div className="text-xl font-extrabold text-ink">
-                                {formatTenge(row.price * mult)}
-                                {pair && (
+                                {formatTenge(row.price * selQty)}
+                                {pair ? (
                                   <span className="ml-1.5 text-xs font-semibold text-muted">
-                                    за 2 шт
+                                    цена за {selQty}шт
                                   </span>
-                                )}
+                                ) : selQty > 1 ? (
+                                  <span className="ml-1.5 text-xs font-semibold text-muted">
+                                    за {selQty} шт
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
                           ) : (
@@ -1236,30 +1274,21 @@ export default function Catalog({
                             </div>
                           )}
 
-                          {showActions &&
-                            (inCart ? (
-                              <CartQtySelector
-                                qty={qtyInCart}
-                                step={pair ? PAIR_STEP : 1}
-                                onSet={(n) => setCartQty(row.id, n)}
-                                onRemove={() => removeFromCart(row.id)}
-                              />
-                            ) : row.totalQty === 0 ? (
-                              <button
-                                disabled
-                                title="Нет на складах — добавьте в избранное, чтобы не потерять"
-                                className="btn h-9 w-full cursor-not-allowed whitespace-nowrap bg-gray-100 text-muted"
-                              >
-                                Нет в наличии
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleAdd(row)}
-                                className="btn-accent h-9 w-full whitespace-nowrap transition-all duration-200"
-                              >
-                                <ShoppingCart size={16} /> В корзину
-                              </button>
-                            ))}
+                          {showActions && (
+                            <AddToCartPanel
+                              qty={selQty}
+                              step={step}
+                              outOfStock={row.totalQty === 0}
+                              inCartQty={qtyInCart}
+                              onQtyChange={(n) =>
+                                setPick(
+                                  row.id,
+                                  pair ? snapPairQty(n) : Math.max(1, n)
+                                )
+                              }
+                              onAdd={(n) => handleAdd(row, n)}
+                            />
+                          )}
                           {showAdminControls && (
                             <div className="mt-3 flex items-center gap-2 border-t border-line pt-2">
                               <button
@@ -1415,7 +1444,7 @@ export default function Catalog({
               {giftModal.price > 0 && (
                 <div className="mt-3 flex items-center gap-2">
                   {giftModal.discountPct > 0 && giftModal.oldPrice != null && (
-                    <span className="text-sm text-gray-400 line-through">
+                    <span className="text-base font-medium text-gray-400 line-through">
                       {formatTenge(giftModal.oldPrice)}
                     </span>
                   )}

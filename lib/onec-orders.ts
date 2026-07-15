@@ -23,6 +23,21 @@ export type OneCOrderResult = {
   error?: string;
 };
 
+// 1С order comment: "Доставка, Адрес: <адрес клиента> <комментарий>".
+// Empty parts are dropped so the string never carries dangling commas or
+// doubled spaces (multi-line client comments are flattened to one line).
+export function buildOneCComment(
+  address?: string | null,
+  comment?: string | null
+): string {
+  const addr = (address ?? "").replace(/\s+/g, " ").trim();
+  const note = (comment ?? "").replace(/\s+/g, " ").trim();
+  let out = "Доставка";
+  if (addr) out += `, Адрес: ${addr}`;
+  if (note) out += addr ? ` ${note}` : `, ${note}`;
+  return out;
+}
+
 function ordersUrl(): string | null {
   if (process.env.ONEC_ORDERS_URL) return process.env.ONEC_ORDERS_URL;
   // Derive from the products feed: …/hs/v1/products → …/hs/v1/orders

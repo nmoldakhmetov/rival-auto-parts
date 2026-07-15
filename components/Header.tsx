@@ -11,10 +11,16 @@ import {
   Mail,
   UserRound,
   Menu,
+  X,
 } from "lucide-react";
 import { useSearch } from "@/store/search";
 import { useUi } from "@/store/ui";
 import { normalizePhone } from "@/lib/whatsapp";
+import {
+  getSearchHistory,
+  addSearchHistory,
+  removeSearchHistory,
+} from "@/lib/search-history";
 import BroadcastBell from "@/components/BroadcastBell";
 
 type Manager = {
@@ -72,6 +78,24 @@ export default function Header({ manager }: { manager?: Manager | null }) {
   const [open, setOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Recent searches (YouTube-style): focusing the EMPTY search field drops
+  // down the history; picking an entry fills the query and runs the search.
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const showHistory =
+    searchFocused && query.trim() === "" && history.length > 0;
+
+  function pickHistory(q: string) {
+    addSearchHistory(q); // bump to the top
+    setQuery(q);
+    setSearchFocused(false);
+    searchRef.current?.blur();
+    // Off the catalog the query rides in the URL; on it the search is live.
+    if (pathname !== "/catalog") {
+      router.push(`/catalog?q=${encodeURIComponent(q)}`);
+    }
+  }
+
   // The green WhatsApp button prefers the client's own manager.
   const waNumber = manager?.phone ? normalizePhone(manager.phone) : WA_NUMBER;
 
@@ -100,10 +124,11 @@ export default function Header({ manager }: { manager?: Manager | null }) {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const q = query.trim();
+    if (q) addSearchHistory(q); // Enter commits the query into the history
     if (pathname === "/catalog") return; // the catalog searches live as you type
     // Carry the query in the URL so the route change doesn't reset it (see
     // SearchReset) and the search becomes a shareable deep link.
-    const q = query.trim();
     router.push(q ? `/catalog?q=${encodeURIComponent(q)}` : "/catalog");
   }
 
@@ -129,12 +154,53 @@ export default function Header({ manager }: { manager?: Manager | null }) {
           ref={searchRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => {
+            setHistory(getSearchHistory());
+            setSearchFocused(true);
+          }}
+          onBlur={() => setSearchFocused(false)}
           placeholder="Поиск по артикулу, марке или применяемости…"
           className="w-full rounded-lg border border-line bg-gray-50 py-2.5 pl-11 pr-10 text-sm outline-none transition-all duration-200 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20"
         />
         <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-line bg-white px-1.5 py-0.5 text-[10px] font-semibold text-muted sm:block">
           /
         </kbd>
+
+        {/* Recent searches dropdown. onMouseDown-preventDefault keeps the
+            input focused, so the click lands before blur closes the list. */}
+        {showHistory && (
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-lg border border-line bg-white py-1 shadow-lg"
+          >
+            <div className="px-3.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+              Недавние запросы
+            </div>
+            {history.map((h) => (
+              <div key={h} className="group flex items-center">
+                <button
+                  type="button"
+                  onClick={() => pickHistory(h)}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2 text-left text-sm text-ink transition-colors hover:bg-gray-50"
+                >
+                  <Clock size={15} className="shrink-0 text-muted" />
+                  <span className="truncate">{h}</span>
+                </button>
+                <button
+                  type="button"
+                  title="Удалить из истории"
+                  onClick={() => {
+                    removeSearchHistory(h);
+                    setHistory(getSearchHistory());
+                  }}
+                  className="mr-2 hidden h-7 w-7 shrink-0 items-center justify-center rounded text-muted hover:bg-gray-100 hover:text-ink group-hover:flex"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </form>
 
       <div className="ml-auto flex items-center gap-2">

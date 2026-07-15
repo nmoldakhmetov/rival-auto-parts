@@ -33,6 +33,8 @@ type Broadcast = {
   products: BProduct[];
 };
 
+const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
+
 const SESSION_KEY = "rival_broadcasts_autoshown";
 const POLL_MS = 45_000; // клиент узнаёт о новой рассылке без обновления страницы
 
@@ -203,7 +205,7 @@ export default function BroadcastBell() {
               </div>
             ) : (
               /* ── List: titles only, click opens the broadcast ─────── */
-              <div className="max-h-[72vh] overflow-y-auto p-3">
+              <div className="max-h-[72vh] space-y-2 overflow-y-auto p-3">
                 {items.map((b) => (
                   <button
                     key={b.id}
@@ -213,7 +215,12 @@ export default function BroadcastBell() {
                         ? "Откроется страницей с товарами — как каталог"
                         : undefined
                     }
-                    className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition-all duration-200 hover:-translate-y-[1px] hover:border-line hover:bg-gray-50 hover:shadow-md"
+                    className={cx(
+                      "group flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-[1px] hover:shadow-md",
+                      b.read
+                        ? "border-line bg-white hover:border-gray-300 hover:bg-gray-50"
+                        : "border-accent/40 bg-accent/5 hover:border-accent/60"
+                    )}
                   >
                     <span
                       className={

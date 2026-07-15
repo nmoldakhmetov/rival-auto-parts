@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Undo2, Loader2, Send, PackageX } from "lucide-react";
 import { formatTenge, formatDateTime } from "@/lib/format";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type OrderItem = {
   productId: string | null;
@@ -65,6 +66,9 @@ export default function ReturnsClient({
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  // The submit button opens a confirmation dialog first (no accidental
+  // return requests); the actual POST lives in doSubmit().
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function load() {
     setLoading(true);
@@ -76,13 +80,19 @@ export default function ReturnsClient({
   }
   useEffect(load, []);
 
-  async function submit(e: React.FormEvent) {
+  function submit(e: React.FormEvent) {
     e.preventDefault();
     const item = orderItems.find((i) => (i.productId ?? i.sku) === itemKey);
     if (!item) {
       setMsg("Выберите товар из ваших заказов");
       return;
     }
+    setConfirmOpen(true);
+  }
+
+  async function doSubmit() {
+    const item = orderItems.find((i) => (i.productId ?? i.sku) === itemKey);
+    if (!item) return;
     setSubmitting(true);
     setMsg(null);
     try {
@@ -229,6 +239,18 @@ export default function ReturnsClient({
                 Оформить возврат
               </button>
               {msg && <span className="text-xs text-muted">{msg}</span>}
+              <ConfirmDialog
+                open={confirmOpen}
+                title="Заявка на возврат"
+                text="Вы действительно хотите оформить заявку на возврат?"
+                confirmLabel="Да"
+                cancelLabel="Нет"
+                onCancel={() => setConfirmOpen(false)}
+                onConfirm={() => {
+                  setConfirmOpen(false);
+                  doSubmit();
+                }}
+              />
             </div>
           </div>
         )}

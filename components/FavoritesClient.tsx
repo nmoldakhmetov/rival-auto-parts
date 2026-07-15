@@ -6,9 +6,11 @@ import { Heart, ShoppingCart, ImageOff } from "lucide-react";
 import { useCart } from "@/store/cart";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
-import { isPairOnly, PAIR_STEP } from "@/lib/pair-only";
+import { isPairOnly, snapPairQty, PAIR_STEP } from "@/lib/pair-only";
 import type { CatalogRow } from "@/lib/types";
+import type { Role } from "@/lib/jwt";
 import CartQtySelector from "@/components/CartQtySelector";
+import AddToCartPanel from "@/components/AddToCartPanel";
 import StockBadges from "@/components/StockBadges";
 import ViewToggle, { type ViewMode } from "@/components/ViewToggle";
 import EmptyState from "@/components/EmptyState";
@@ -42,13 +44,19 @@ function ProductThumb({ src, alt }: { src: string | null; alt: string }) {
 // The client's saved products with the same list/grid toggle as the catalog:
 // live pricing, per-warehouse stock, cart qty controls. The heart removes an
 // item from the list.
-export default function FavoritesClient() {
+export default function FavoritesClient({ role }: { role: Role }) {
   const [rows, setRows] = useState<CatalogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [discountDisplay, setDiscountDisplay] = useState("percent");
   const [whTooltip, setWhTooltip] = useState("");
-  // List view is the default, mirroring the catalog.
-  const [view, setView] = useState<ViewMode>("list");
+  // Grid view is the default, mirroring the catalog.
+  const [view, setView] = useState<ViewMode>("grid");
+  // Local per-card qty picks (grid view) — committed by «В корзину», the
+  // displayed price multiplies live (same flow as the catalog cards).
+  const [pickQty, setPickQty] = useState<Record<string, number>>({});
+  const setPick = (id: string, n: number) =>
+    // Same cap as the cart store / server (protects the order total).
+    setPickQty((m) => ({ ...m, [id]: Math.min(100_000, Math.max(1, n)) }));
 
   const cartItems = useCart((s) => s.items);
   const add = useCart((s) => s.add);
@@ -81,7 +89,7 @@ export default function FavoritesClient() {
     }).catch(() => {});
   }
 
-  function addToCart(row: CatalogRow) {
+  function addToCart(row: CatalogRow, qty?: number) {
     const pair = isPairOnly(row.category);
     add(
       {
@@ -94,14 +102,24 @@ export default function FavoritesClient() {
         imageUrl: row.imageUrl,
         pairOnly: pair,
       },
-      pair ? PAIR_STEP : 1
+      qty ?? (pair ? PAIR_STEP : 1)
     );
   }
 
-  // Price block (strike + 1С badge + final), shared by both views. `mult`
-  // doubles the displayed price for pair-only goods («Диски UIDNU»).
-  function PriceBlock({ row, compact }: { row: CatalogRow; compact?: boolean }) {
-    const mult = isPairOnly(row.category) ? 2 : 1;
+  // Price block (strike + 1С badge + final), shared by both views. `qty`
+  // (grid: the locally picked amount) multiplies the displayed prices; by
+  // default it's the pair minimum ×2 for «Диски UIDNU» and ×1 otherwise.
+  function PriceBlock({
+    row,
+    compact,
+    qty,
+  }: {
+    row: CatalogRow;
+    compact?: boolean;
+    qty?: number;
+  }) {
+    const pair = isPairOnly(row.category);
+    const mult = qty ?? (pair ? 2 : 1);
     if (row.price <= 0) {
       return (
         <span className={cx("font-semibold text-muted", compact ? "text-xs" : "text-sm")}>
@@ -120,13 +138,13 @@ export default function FavoritesClient() {
           >
             <span
               className={cx(
-                "text-gray-400 line-through",
-                compact ? "text-[10px]" : "text-sm"
+                "font-medium text-gray-400 line-through",
+                compact ? "text-sm" : "text-base"
               )}
             >
               {formatTenge(row.oldPrice * mult)}
             </span>
-            <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+            <span className="whitespace-nowrap rounded-full bg-accent px-2 py-1 text-xs font-bold leading-none text-white">
               {formatDiscount(
                 discountDisplay,
                 row.discountPct,
@@ -143,11 +161,15 @@ export default function FavoritesClient() {
           )}
         >
           {formatTenge(row.price * mult)}
-          {mult === 2 && (
+          {pair ? (
             <span className="ml-1 text-[10px] font-semibold text-muted">
-              за 2 шт
+              цена за {mult}шт
             </span>
-          )}
+          ) : mult > 1 ? (
+            <span className="ml-1 text-[10px] font-semibold text-muted">
+              за {mult} шт
+            </span>
+          ) : null}
         </div>
       </div>
     );
@@ -189,25 +211,23 @@ export default function FavoritesClient() {
   }
 
   if (loading) {
-    // Row-shaped skeleton matching the default list view.
+    // Card-shaped skeleton matching the default grid view.
     return (
       <div className="px-6 py-6">
         <div className="skeleton mb-4 h-7 w-48" />
-        <div className="overflow-hidden rounded-lg border border-line bg-white p-4">
-          <div className="skeleton mb-4 h-4 w-full" />
-          {Array.from({ length: 5 }).map((_, i) => (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
-              className="flex items-center gap-4 border-t border-line py-3"
+              className="overflow-hidden rounded-xl border border-line bg-white shadow-sm"
             >
-              <div className="skeleton h-11 w-11 shrink-0" />
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="skeleton h-4 w-1/4" />
-                <div className="skeleton h-3 w-3/5" />
+              <div className="skeleton h-44 w-full !rounded-none" />
+              <div className="space-y-2 p-4">
+                <div className="skeleton h-4 w-2/5" />
+                <div className="skeleton h-3 w-full" />
+                <div className="skeleton mt-3 h-6 w-1/3" />
+                <div className="skeleton h-9 w-full" />
               </div>
-              <div className="skeleton h-5 w-24" />
-              <div className="skeleton h-4 w-16" />
-              <div className="skeleton h-9 w-40" />
             </div>
           ))}
         </div>
@@ -267,9 +287,12 @@ export default function FavoritesClient() {
                   </td>
                   <td>
                     <div className="font-semibold text-ink">{row.sku}</div>
-                    <div className="text-[11px] text-muted">
-                      код: {row.code}
-                    </div>
+                    {/* Внутренний код 1С — только для персонала. */}
+                    {role !== "CLIENT" && (
+                      <div className="text-[11px] text-muted">
+                        код: {row.code}
+                      </div>
+                    )}
                   </td>
                   <td>
                     {visibleCategory(row.category) ? (
@@ -318,6 +341,9 @@ export default function FavoritesClient() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           {rows.map((row, i) => {
             const desc = row.fullName || "";
+            const pair = isPairOnly(row.category);
+            const step = pair ? PAIR_STEP : 1;
+            const selQty = pickQty[row.id] ?? step;
             return (
               <div
                 key={row.id}
@@ -347,7 +373,10 @@ export default function FavoritesClient() {
 
                 <div className="flex flex-1 flex-col p-4">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="shrink-0 font-bold text-ink">
+                    <span
+                      title={row.sku}
+                      className="min-w-0 truncate font-bold text-ink"
+                    >
                       {row.sku}
                     </span>
                     {visibleCategory(row.category) && (
@@ -374,9 +403,18 @@ export default function FavoritesClient() {
 
                   <div className="mt-auto pt-3">
                     <div className="mb-2.5">
-                      <PriceBlock row={row} />
+                      <PriceBlock row={row} qty={selQty} />
                     </div>
-                    <CartControl row={row} />
+                    <AddToCartPanel
+                      qty={selQty}
+                      step={step}
+                      outOfStock={row.totalQty === 0}
+                      inCartQty={cartQtyById.get(row.id) ?? 0}
+                      onQtyChange={(n) =>
+                        setPick(row.id, pair ? snapPairQty(n) : Math.max(1, n))
+                      }
+                      onAdd={(n) => addToCart(row, n)}
+                    />
                   </div>
                 </div>
               </div>

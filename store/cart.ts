@@ -16,12 +16,24 @@ export type CartItem = {
   qty: number;
 };
 
+// Upper bound for a single line — matches the input cap in CartQtySelector
+// and the server-side cap in /api/orders (protects the Decimal(12,2) total).
+const MAX_QTY = 100_000;
+
+export type RepricedFields = {
+  price: number;
+  oldPrice: number | null;
+  discountPct: number;
+};
+
 type CartState = {
   items: CartItem[];
   add: (item: Omit<CartItem, "qty">, qty?: number) => void;
   setQty: (productId: string, qty: number) => void;
   remove: (productId: string) => void;
   clear: () => void;
+  // Refresh stale persisted price snapshots (see /api/cart/reprice).
+  updatePrices: (prices: Record<string, RepricedFields>) => void;
 };
 
 export const useCart = create<CartState>()(
@@ -31,8 +43,10 @@ export const useCart = create<CartState>()(
       add: (item, qty = 1) =>
         set((state) => {
           // Pair-only items always hold an even quantity (min 2).
-          const clamp = (n: number) =>
-            item.pairOnly ? snapPairQty(n) : Math.max(1, n);
+          const clamp = (n: number) => {
+            const capped = Math.min(MAX_QTY, Math.max(1, n));
+            return item.pairOnly ? snapPairQty(capped) : capped;
+          };
           const existing = state.items.find(
             (i) => i.productId === item.productId
           );
@@ -49,17 +63,31 @@ export const useCart = create<CartState>()(
         }),
       setQty: (productId, qty) =>
         set((state) => ({
-          items: state.items.map((i) =>
-            i.productId === productId
-              ? { ...i, qty: i.pairOnly ? snapPairQty(qty) : Math.max(1, qty) }
-              : i
-          ),
+          items: state.items.map((i) => {
+            if (i.productId !== productId) return i;
+            const capped = Math.min(MAX_QTY, Math.max(1, qty));
+            return { ...i, qty: i.pairOnly ? snapPairQty(capped) : capped };
+          }),
         })),
       remove: (productId) =>
         set((state) => ({
           items: state.items.filter((i) => i.productId !== productId),
         })),
       clear: () => set({ items: [] }),
+      updatePrices: (prices) =>
+        set((state) => ({
+          items: state.items.map((i) => {
+            const p = prices[i.productId];
+            return p
+              ? {
+                  ...i,
+                  price: p.price,
+                  oldPrice: p.oldPrice,
+                  discountPct: p.discountPct,
+                }
+              : i;
+          }),
+        })),
     }),
     { name: "rival-cart" }
   )

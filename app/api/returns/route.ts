@@ -26,49 +26,47 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
   }
 
-  const qty = Math.max(1, Math.trunc(Number(body.qty) || 1));
-
-  let snap = {
-    productId: null as string | null,
-    code: null as string | null,
-    sku: "",
-    name: "",
-    brand: null as string | null,
-    price: 0,
-  };
-
-  if (body.productId) {
-    const p = await prisma.product.findUnique({ where: { id: body.productId } });
-    if (p) {
-      snap = {
-        productId: p.id,
-        code: p.code,
-        sku: p.sku,
-        name: p.name,
-        brand: p.brand,
-        price: Number(p.price),
-      };
-    }
-  } else if (body.sku) {
-    const p = await prisma.product.findFirst({ where: { sku: body.sku } });
-    if (p) {
-      snap = {
-        productId: p.id,
-        code: p.code,
-        sku: p.sku,
-        name: p.name,
-        brand: p.brand,
-        price: Number(p.price),
-      };
-    } else {
-      snap.sku = String(body.sku);
-      snap.name = String(body.name ?? body.sku);
-    }
-  }
-
-  if (!snap.sku) {
+  if (!body.productId && !body.sku) {
     return NextResponse.json({ error: "Укажите товар" }, { status: 400 });
   }
+
+  // A return is only valid for something this client actually bought: the
+  // snapshot (incl. the PRICE PAID, not today's catalog price) comes from the
+  // client's own order lines, and the quantity is capped by the total bought.
+  const itemWhere = {
+    order: { userId: session.sub },
+    isGift: false,
+    ...(body.productId
+      ? { productId: String(body.productId) }
+      : { sku: String(body.sku) }),
+  };
+  const [bought, boughtTotal] = await Promise.all([
+    prisma.orderItem.findFirst({
+      where: itemWhere,
+      orderBy: { order: { createdAt: "desc" } },
+      include: { product: { select: { code: true, brand: true } } },
+    }),
+    prisma.orderItem.aggregate({ _sum: { qty: true }, where: itemWhere }),
+  ]);
+  if (!bought) {
+    return NextResponse.json(
+      { error: "Этот товар не найден в ваших заказах" },
+      { status: 400 }
+    );
+  }
+
+  const qty = Math.min(
+    Math.max(1, Math.trunc(Number(body.qty) || 1)),
+    boughtTotal._sum.qty ?? 1
+  );
+  const snap = {
+    productId: bought.productId,
+    code: bought.product?.code ?? null,
+    sku: bought.sku,
+    name: bought.name,
+    brand: bought.product?.brand ?? null,
+    price: Number(bought.price), // цена покупки из снимка заказа
+  };
 
   const ret = await prisma.return.create({
     data: {

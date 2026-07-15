@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 
-// Quantity selector shown once a product is in the cart. The number is a real
-// editable field, so a wholesale buyer can type e.g. 200 right in the catalog
-// instead of tapping + hundreds of times. − at the minimum removes the item.
-// `step` > 1 (pair-only goods) makes ± move by that step; typed values are
-// committed on blur/Enter and snapped to the step by the cart store.
+// Quantity selector: bound to the cart (in-cart editing) or, without
+// `onRemove`, a local picker on product cards. The number is a real editable
+// field, so a wholesale buyer can type e.g. 200 right in the catalog instead
+// of tapping + hundreds of times. − at the minimum removes the item when
+// `onRemove` is given, otherwise it's disabled. `step` > 1 (pair-only goods)
+// makes ± move by that step; typed values are committed on blur/Enter and
+// snapped to the step by the owner (cart store / card handler).
 export default function CartQtySelector({
   qty,
   onSet,
@@ -16,7 +18,7 @@ export default function CartQtySelector({
 }: {
   qty: number;
   onSet: (n: number) => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   step?: number;
 }) {
   const [draft, setDraft] = useState(String(qty));
@@ -24,6 +26,19 @@ export default function CartQtySelector({
   useEffect(() => {
     setDraft(String(qty));
   }, [qty]);
+  // ± must read the LIVE qty: two clicks landing in one tick would both see
+  // the same stale prop and lose one increment (qty+step computed twice).
+  // The ref moves optimistically on click and re-syncs from the prop (the
+  // owner may snap the value, e.g. pair-only quantities).
+  const qtyRef = useRef(qty);
+  useEffect(() => {
+    qtyRef.current = qty;
+  }, [qty]);
+  function bump(delta: number) {
+    const next = Math.max(step, qtyRef.current + delta);
+    qtyRef.current = next;
+    onSet(next);
+  }
 
   function change(raw: string) {
     const digits = raw.replace(/\D/g, "").slice(0, 6);
@@ -52,9 +67,16 @@ export default function CartQtySelector({
       title={step > 1 ? `Продаётся только парами — шаг ${step} шт` : undefined}
     >
       <button
-        onClick={() => (qty <= step ? onRemove() : onSet(qty - step))}
-        title={qty > step ? "Уменьшить" : "Убрать из корзины"}
-        className="flex h-full w-10 shrink-0 items-center justify-center rounded-l-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink"
+        onClick={() => (qtyRef.current <= step ? onRemove?.() : bump(-step))}
+        disabled={qty <= step && !onRemove}
+        title={
+          qty > step
+            ? "Уменьшить"
+            : onRemove
+              ? "Убрать из корзины"
+              : "Минимальное количество"
+        }
+        className="flex h-full w-10 shrink-0 items-center justify-center rounded-l-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
       >
         <Minus size={16} />
       </button>
@@ -72,7 +94,7 @@ export default function CartQtySelector({
         className="h-full min-w-0 flex-1 bg-transparent text-center text-base font-semibold tabular-nums text-gray-900 outline-none"
       />
       <button
-        onClick={() => onSet(qty + step)}
+        onClick={() => bump(step)}
         title="Добавить ещё"
         className="flex h-full w-10 shrink-0 items-center justify-center rounded-r-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink"
       >

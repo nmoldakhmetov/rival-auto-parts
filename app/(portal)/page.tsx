@@ -272,15 +272,19 @@ export default function HomePage() {
 
         {/* Stores */}
         <h3 className="mb-4 mt-10 text-xl font-bold text-ink">Наши магазины</h3>
-        <div className="grid gap-6 lg:grid-cols-2">
+        {/* items-stretch (grid default) + h-full card → every card in the row
+            matches the tallest; flex-col pins the map to the bottom. */}
+        <div className="grid items-stretch gap-6 lg:grid-cols-2">
           {STORES.map((s) => (
             <div
               key={s.name}
-              className="overflow-hidden rounded-xl border border-line bg-white shadow-sm transition-all duration-200 hover:shadow-md"
+              className="flex h-full flex-col overflow-hidden rounded-xl border border-line bg-white shadow-sm transition-all duration-200 hover:shadow-md"
             >
-              <div className="p-5">
+              {/* Info + staff: flexible zone that soaks up the extra height so
+                  the map never gets pushed around. */}
+              <div className="flex min-h-0 flex-1 flex-col p-5">
                 <div className="mb-3 flex items-center gap-2.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
                     <Building2 size={18} />
                   </div>
                   <h4 className="text-base font-bold text-ink">{s.name}</h4>
@@ -315,11 +319,13 @@ export default function HomePage() {
                 )}
 
                 {s.staff.length > 0 && (
-                  <div className="mt-4 border-t border-line pt-3">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-line pt-3">
+                    <div className="mb-2 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted">
                       Сотрудники офиса
                     </div>
-                    <div className="space-y-2">
+                    {/* Bounded, scrollable staff list: N managers never stretch
+                        the card past ~3 rows — the rest scroll inside. */}
+                    <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
                       {s.staff.map((p) => (
                         <div
                           key={p.name + p.tel}
@@ -355,12 +361,14 @@ export default function HomePage() {
                 )}
               </div>
 
+              {/* Map: fixed height, never compressed (shrink-0), always at the
+                  bottom edge of the card. */}
               <iframe
                 src={mapSrc(s.mapQuery)}
                 title={`Карта — ${s.name}`}
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
-                className="h-56 w-full border-t border-line"
+                className="h-56 w-full shrink-0 border-t border-line"
               />
             </div>
           ))}

@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { BadgePercent } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Catalog from "@/components/Catalog";
@@ -23,26 +22,9 @@ export default async function PromotionsPage() {
     hasNoAccess = count === 0;
   }
 
+  // Single compact header — rendered by the Catalog's own slim header bar.
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Promo banner */}
-      <div className="border-b border-line bg-white px-6 py-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
-            <BadgePercent size={19} />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold leading-tight text-ink">
-              Акции и подарки
-            </h1>
-            <p className="mt-0.5 max-w-3xl text-sm leading-relaxed text-muted">
-              Товары, за покупку которых полагается подарок, и товары со
-              скидкой. Подарочные предложения — всегда в начале списка.
-            </p>
-          </div>
-        </div>
-      </div>
-
       <div className="min-h-0 flex-1">
         <Suspense
           fallback={
@@ -53,8 +35,8 @@ export default async function PromotionsPage() {
             role={session.role}
             hasNoAccess={hasNoAccess}
             promoOnly
-            heading="Акционные товары"
-            subheading="Сначала — товары с подарком, затем — со скидкой"
+            heading="Акции и подарки"
+            subheading="Товары, за покупку которых полагается подарок, и товары со скидкой."
           />
         </Suspense>
       </div>

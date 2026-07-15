@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { buildWaLink } from "@/lib/whatsapp";
 import { formatTenge } from "@/lib/format";
 import { getDiscountContext } from "@/lib/pricing";
-import { sendOrderToOneC } from "@/lib/onec-orders";
+import { buildOneCComment, sendOrderToOneC } from "@/lib/onec-orders";
 import { getActiveGiftRules } from "@/lib/gifts";
 import { earnedGiftQty } from "@/lib/gift-earn";
 import { isPairOnly, snapPairQty } from "@/lib/pair-only";
@@ -13,10 +13,21 @@ export const dynamic = "force-dynamic";
 
 type IncomingItem = { productId: string; qty: number };
 
+// Hard cap on a single line's quantity: protects the Decimal(12,2) total and
+// mirrors the UI cap in CartQtySelector / the cart store.
+const MAX_QTY = 100_000;
+
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Orders are a client-only action (staff sees base prices and has no cart).
+  if (session.role !== "CLIENT") {
+    return NextResponse.json(
+      { error: "Заказы оформляют только клиенты" },
+      { status: 403 }
+    );
   }
 
   let body: { items?: IncomingItem[]; comment?: string };
@@ -41,6 +52,13 @@ export async function POST(req: NextRequest) {
     where: { id: session.sub },
     include: { manager: true },
   });
+  // The BlockOverlay is UI-only — enforce the debtor auto-block here too.
+  if (!me?.isActive) {
+    return NextResponse.json(
+      { error: "Аккаунт заблокирован — обратитесь к вашему менеджеру" },
+      { status: 403 }
+    );
+  }
 
   // Apply the client's discount rules (per-product) to the order price.
   const disc = await getDiscountContext(session.sub, session.role);
@@ -64,7 +82,7 @@ export async function POST(req: NextRequest) {
   for (const i of incoming) {
     const p = byId.get(i.productId);
     if (!p) continue;
-    let qty = Math.max(1, Math.trunc(Number(i.qty) || 1));
+    let qty = Math.min(MAX_QTY, Math.max(1, Math.trunc(Number(i.qty) || 1)));
     // «Диски UIDNU» are sold strictly in pairs — snap to even (min 2).
     if (isPairOnly(p.category)) qty = snapPairQty(qty);
     const price = Math.round(Number(p.price) * (1 - disc.pctFor(p) / 100));
@@ -129,7 +147,7 @@ export async function POST(req: NextRequest) {
     site_order_id: orderNo,
     client_name: me?.fullName ?? "",
     client_phone: me?.phone ?? "",
-    comment: body.comment?.trim() || "",
+    comment: buildOneCComment(me?.address, body.comment),
     products: onecProducts,
   });
   if (onec.ok) {
@@ -141,12 +159,20 @@ export async function POST(req: NextRequest) {
       .catch(() => {});
   }
 
-  const lines = orderItems.map(
+  // Big orders would blow past URL limits (~2K chars) and break the wa.me
+  // link entirely — cap the message; the full order is always in the portal.
+  const MAX_WA_LINES = 40;
+  const lines = orderItems.slice(0, MAX_WA_LINES).map(
     (i, idx) =>
       `${idx + 1}. ${i.sku} — ${i.name} × ${i.qty} шт.${
         i.isGift ? " (подарок)" : ""
       }`
   );
+  if (orderItems.length > MAX_WA_LINES) {
+    lines.push(
+      `…и ещё ${orderItems.length - MAX_WA_LINES} поз. — полный состав в портале`
+    );
+  }
   const text =
     `Здравствуйте! Заказ №${orderNo}` +
     (me?.fullName ? ` от «${me.fullName}»` : "") +

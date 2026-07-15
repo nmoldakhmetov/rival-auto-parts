@@ -124,9 +124,13 @@ export function priceFor(
   const syncDropPct =
     old != null && old > base ? Math.round(((old - base) / old) * 100) : 0;
   const finalPrice = Math.round(base * (1 - clientDiscPct / 100));
+  // A markup can push the final price ABOVE the 1С old price — showing a
+  // strike-through lower than the actual price would be absurd, so the badge
+  // only appears while the final price genuinely undercuts the old one.
+  const showDrop = syncDropPct > 0 && old != null && old > finalPrice;
   return {
     price: finalPrice,
-    oldPrice: syncDropPct > 0 ? old : null,
-    discountPct: syncDropPct,
+    oldPrice: showDrop ? old : null,
+    discountPct: showDrop ? syncDropPct : 0,
   };
 }

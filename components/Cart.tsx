@@ -3,8 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Minus,
-  Plus,
   Trash2,
   ShoppingCart,
   Send,
@@ -21,6 +19,7 @@ import type { CatalogRow } from "@/lib/types";
 import { earnedGiftQty, type GiftRuleLite as GiftRule } from "@/lib/gift-earn";
 import EmptyState from "@/components/EmptyState";
 import CartQtySelector from "@/components/CartQtySelector";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type CheckoutResult = {
   orderNo: string;
@@ -39,6 +38,8 @@ export default function Cart({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<CheckoutResult | null>(null);
+  // «Оформить заказ» opens a confirmation dialog first — no accidental orders.
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const [giftRules, setGiftRules] = useState<GiftRule[]>([]);
   const [giftProducts, setGiftProducts] = useState<Record<string, CatalogRow>>(
@@ -50,6 +51,25 @@ export default function Cart({
   const [policyGift, setPolicyGift] = useState("");
 
   useEffect(() => setMounted(true), []);
+
+  // The persisted cart holds price snapshots from the moment of adding —
+  // discount rules / 1С prices may have moved since. Re-price once per visit
+  // so «Итого» matches what /api/orders will actually charge. getState()
+  // avoids re-running when updatePrices itself changes the items.
+  useEffect(() => {
+    const ids = useCart.getState().items.map((i) => i.productId);
+    if (ids.length === 0) return;
+    fetch("/api/cart/reprice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.prices) useCart.getState().updatePrices(d.prices);
+      })
+      .catch(() => {});
+  }, []);
 
   // Active gift promos → free items earned by the current cart contents. The
   // server re-computes these on checkout; here it's display only.
@@ -389,29 +409,15 @@ export default function Cart({
                     )}
                   </td>
                   <td>
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => setQty(i.productId, i.qty - step)}
-                        className="flex h-7 w-7 items-center justify-center rounded border border-line hover:bg-gray-50"
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <input
-                        value={i.qty}
-                        onChange={(e) =>
-                          setQty(
-                            i.productId,
-                            Math.max(1, parseInt(e.target.value) || 1)
-                          )
-                        }
-                        className="h-7 w-12 rounded border border-line text-center text-sm outline-none focus:border-accent"
+                    {/* Same qty control as the mobile cards / catalog: draft
+                        input (can be cleared while typing), shared caps. */}
+                    <div className="mx-auto w-32">
+                      <CartQtySelector
+                        qty={i.qty}
+                        step={step}
+                        onSet={(n) => setQty(i.productId, n)}
+                        onRemove={() => remove(i.productId)}
                       />
-                      <button
-                        onClick={() => setQty(i.productId, i.qty + step)}
-                        className="flex h-7 w-7 items-center justify-center rounded border border-line hover:bg-gray-50"
-                      >
-                        <Plus size={14} />
-                      </button>
                     </div>
                   </td>
                   <td className="text-right font-semibold text-ink">
@@ -508,7 +514,7 @@ export default function Cart({
           )}
 
           <button
-            onClick={checkout}
+            onClick={() => setConfirmOpen(true)}
             disabled={loading}
             className="btn-accent w-full"
           >
@@ -519,6 +525,18 @@ export default function Cart({
             )}
             Оформить заказ
           </button>
+          <ConfirmDialog
+            open={confirmOpen}
+            title="Оформление заказа"
+            text={`Вы действительно хотите оформить этот заказ? Сумма — ${formatTenge(total)}.`}
+            confirmLabel="Да"
+            cancelLabel="Нет"
+            onCancel={() => setConfirmOpen(false)}
+            onConfirm={() => {
+              setConfirmOpen(false);
+              checkout();
+            }}
+          />
           <p className="mt-2 text-center text-[11px] text-muted">
             Оплата не требуется — заказ уйдёт менеджеру в WhatsApp
           </p>

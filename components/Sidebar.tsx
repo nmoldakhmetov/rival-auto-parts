@@ -139,6 +139,7 @@ export default function Sidebar({
     Icon,
     badge,
     giftUnits,
+    highlight,
   }: {
     href: string;
     label: string;
@@ -146,6 +147,8 @@ export default function Sidebar({
     badge?: number;
     // Earned promo gifts → green «🎁 +N» pill next to the cart counter.
     giftUnits?: number;
+    // Accent entry (e.g. «Акции»): red tint so the eye lands on it.
+    highlight?: boolean;
   }) {
     // Root routes ("/" and "/admin") match exactly so they don't stay
     // highlighted on nested pages (e.g. /admin/discounts).
@@ -161,7 +164,9 @@ export default function Sidebar({
           "relative mx-2 flex items-center gap-3 rounded-md px-4 py-2.5 text-sm font-medium transition-colors",
           active
             ? "bg-accent text-white"
-            : "text-white/70 hover:bg-sidebar-hover hover:text-white",
+            : highlight
+              ? "bg-accent/15 font-semibold text-accent-light hover:bg-accent/25 hover:text-white"
+              : "text-white/70 hover:bg-sidebar-hover hover:text-white",
           // Mini mode (desktop only): centered icon, no label.
           mini && "lg:justify-center lg:gap-0 lg:px-0"
         )}
@@ -266,12 +271,13 @@ export default function Sidebar({
             <X size={18} />
           </button>
 
-          {/* Desktop collapse toggle on the sidebar edge */}
+          {/* Desktop collapse toggle on the sidebar edge: a quiet square in
+              the sidebar's own palette (no white circle, no heavy shadow). */}
           <button
             onClick={toggleCollapsed}
             title={mini ? "Развернуть меню" : "Свернуть меню"}
             aria-label={mini ? "Развернуть меню" : "Свернуть меню"}
-            className="absolute -right-3 top-1/2 z-20 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-white text-muted shadow-md transition-all duration-200 hover:scale-110 hover:text-accent lg:flex"
+            className="absolute -right-3 top-1/2 z-20 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-sidebar-border/60 bg-sidebar-active text-gray-400 shadow-sm transition-colors duration-200 hover:bg-sidebar-hover hover:text-white lg:flex"
           >
             {mini ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
           </button>
@@ -280,7 +286,7 @@ export default function Sidebar({
         <nav className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden py-3">
           <NavLink href="/" label="Главная" Icon={Home} />
           <NavLink href="/catalog" label="Каталог" Icon={LayoutGrid} />
-          <NavLink href="/promotions" label="Акции" Icon={BadgePercent} />
+          <NavLink href="/promotions" label="Акции" Icon={BadgePercent} highlight />
           <NavLink href="/#contacts" label="Контакты" Icon={MapPin} />
           {role === "CLIENT" && (
             <>
