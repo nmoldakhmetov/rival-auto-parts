@@ -6,6 +6,7 @@ import type { CatalogRow } from "@/lib/types";
 import { findAnalogMatches, normalizeSmart } from "@/lib/analogs";
 import { getDiscountContext, priceFor } from "@/lib/pricing";
 import { NOT_HIDDEN_CATEGORY } from "@/lib/categories";
+import { categoriesUnderPath } from "@/lib/category-tree";
 import { cached } from "@/lib/cache";
 import { getSetting } from "@/lib/settings";
 import { capStockForClient } from "@/lib/stock";
@@ -134,7 +135,14 @@ export async function GET(req: NextRequest) {
   if (make && !model) and.push({ brand: make });
   if (model) and.push({ OR: textSearchOr(model) });
   if (category) and.push({ category });
-  else if (categoryGroup) and.push({ category: { startsWith: categoryGroup } });
+  else if (categoryGroup) {
+    // `categoryGroup` is a taxonomy node path («Тормозные колодки/Ruvill») —
+    // it maps to an explicit set of 1С categories. Unknown paths fall back to
+    // the old prefix behaviour so stray/legacy links keep working.
+    const leaves = categoriesUnderPath(categoryGroup);
+    if (leaves.length > 0) and.push({ category: { in: leaves } });
+    else and.push({ category: { startsWith: categoryGroup } });
+  }
   if (Number.isFinite(minPrice)) and.push({ price: { gte: minPrice } });
   if (Number.isFinite(maxPrice)) and.push({ price: { lte: maxPrice } });
   if (inStock) {

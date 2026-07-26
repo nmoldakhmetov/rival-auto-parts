@@ -49,7 +49,7 @@ export default function LoginForm() {
           autoComplete="username"
           value={login}
           onChange={(e) => setLogin(e.target.value)}
-          placeholder="например, client"
+          placeholder="Ваш логин"
           autoFocus
         />
       </div>
@@ -81,11 +81,6 @@ export default function LoginForm() {
         )}
         {loading ? "Вход…" : "Войти"}
       </button>
-
-      <div className="rounded border border-line bg-gray-50 px-3 py-2 text-[11px] leading-relaxed text-muted">
-        <span className="font-semibold text-ink/70">Демо-доступы:</span>{" "}
-        admin / admin123 · manager / manager123 · client / client123
-      </div>
     </form>
   );
 }

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  Plus,
   ImageOff,
   Loader2,
   PackageSearch,
@@ -29,7 +28,6 @@ import { isPairOnly, snapPairQty, PAIR_STEP } from "@/lib/pair-only";
 import { addSearchHistory } from "@/lib/search-history";
 import AddToCartPanel from "@/components/AddToCartPanel";
 import { canEditCatalog } from "@/lib/permissions";
-import CartQtySelector from "@/components/CartQtySelector";
 import StockBadges from "@/components/StockBadges";
 import ViewToggle, { type ViewMode } from "@/components/ViewToggle";
 import EmptyState from "@/components/EmptyState";
@@ -324,8 +322,6 @@ export default function Catalog({
 
   const cartItems = useCart((s) => s.items);
   const add = useCart((s) => s.add);
-  const setCartQty = useCart((s) => s.setQty);
-  const removeFromCart = useCart((s) => s.remove);
   // productId → qty currently in the cart (drives the persistent "В корзине" state).
   const cartQtyById = useMemo(
     () => new Map(cartItems.map((i) => [i.productId, i.qty])),
@@ -907,7 +903,7 @@ export default function Catalog({
             ) : view === "list" ? (
               /* ─── List (table) view (scrolls horizontally on phones) ── */
               <div className="overflow-x-auto rounded-lg border border-line bg-white">
-                <table className="data-table min-w-[900px]">
+                <table className="data-table min-w-[1040px]">
                   <thead className="sticky top-0 z-10">
                     <tr>
                       <th className="w-14">Фото</th>
@@ -916,7 +912,7 @@ export default function Catalog({
                       <th>Применяемость</th>
                       <th className="w-60">Наличие</th>
                       <th className="w-28 text-right">Цена</th>
-                      {showActions && <th className="w-44"></th>}
+                      {showActions && <th className="w-72"></th>}
                       {showAdminControls && (
                         <th className="w-48">Управление</th>
                       )}
@@ -925,10 +921,12 @@ export default function Catalog({
                   <tbody>
                     {rows.map((row) => {
                       const qtyInCart = cartQtyById.get(row.id) ?? 0;
-                      const inCart = qtyInCart > 0;
-                      // «Диски UIDNU»: цена сразу за пару, шаг корзины 2.
+                      // «Диски UIDNU»: строго парами — шаг и минимум 2 шт.
                       const pair = isPairOnly(row.category);
-                      const mult = pair ? 2 : 1;
+                      const step = pair ? PAIR_STEP : 1;
+                      // Locally picked qty (committed by «В корзину»); the
+                      // price cell multiplies by it live, same as the cards.
+                      const selQty = pickQty[row.id] ?? step;
                       return (
                         <tr
                           key={row.id}
@@ -1012,29 +1010,33 @@ export default function Catalog({
                                 {row.discountPct > 0 &&
                                   row.oldPrice != null && (
                                     <div className="text-sm font-medium text-gray-400 line-through">
-                                      {formatTenge(row.oldPrice * mult)}
+                                      {formatTenge(row.oldPrice * selQty)}
                                     </div>
                                   )}
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {formatTenge(row.price * mult)}
+                                  {formatTenge(row.price * selQty)}
                                   {row.discountPct > 0 && (
                                     <span className="whitespace-nowrap rounded-full bg-accent px-2 py-1 text-xs font-bold leading-none text-white">
                                       {formatDiscount(
                                         discountDisplay,
                                         row.discountPct,
                                         row.oldPrice != null
-                                          ? row.oldPrice * mult
+                                          ? row.oldPrice * selQty
                                           : row.oldPrice,
-                                        row.price * mult
+                                        row.price * selQty
                                       )}
                                     </span>
                                   )}
                                 </div>
-                                {pair && (
+                                {pair ? (
                                   <div className="text-[10px] font-semibold text-muted">
-                                    цена за 2шт
+                                    цена за {selQty}шт
                                   </div>
-                                )}
+                                ) : selQty > 1 ? (
+                                  <div className="text-[10px] font-semibold text-muted">
+                                    за {selQty} шт
+                                  </div>
+                                ) : null}
                               </>
                             ) : (
                               "—"
@@ -1060,34 +1062,20 @@ export default function Catalog({
                                     }
                                   />
                                 </button>
-                                {inCart ? (
-                                  <div className="w-32">
-                                    <CartQtySelector
-                                      qty={qtyInCart}
-                                      step={pair ? PAIR_STEP : 1}
-                                      onSet={(n) => setCartQty(row.id, n)}
-                                      onRemove={() => removeFromCart(row.id)}
-                                    />
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => handleAdd(row)}
-                                    disabled={row.totalQty === 0}
-                                    title={
-                                      row.totalQty === 0
-                                        ? "Нет в наличии — добавьте в избранное"
-                                        : "В корзину"
-                                    }
-                                    className={cx(
-                                      "flex h-8 w-8 items-center justify-center rounded transition-colors",
-                                      row.totalQty === 0
-                                        ? "cursor-not-allowed bg-gray-100 text-gray-300"
-                                        : "bg-accent text-white hover:bg-accent-dark"
-                                    )}
-                                  >
-                                    <Plus size={16} />
-                                  </button>
-                                )}
+                                <AddToCartPanel
+                                  qty={selQty}
+                                  step={step}
+                                  layout="row"
+                                  outOfStock={row.totalQty === 0}
+                                  inCartQty={qtyInCart}
+                                  onQtyChange={(n) =>
+                                    setPick(
+                                      row.id,
+                                      pair ? snapPairQty(n) : Math.max(1, n)
+                                    )
+                                  }
+                                  onAdd={(n) => handleAdd(row, n)}
+                                />
                               </div>
                             </td>
                           )}

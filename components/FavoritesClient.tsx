@@ -2,14 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Heart, ShoppingCart, ImageOff } from "lucide-react";
+import { Heart, ImageOff } from "lucide-react";
 import { useCart } from "@/store/cart";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
 import { isPairOnly, snapPairQty, PAIR_STEP } from "@/lib/pair-only";
 import type { CatalogRow } from "@/lib/types";
 import type { Role } from "@/lib/jwt";
-import CartQtySelector from "@/components/CartQtySelector";
 import AddToCartPanel from "@/components/AddToCartPanel";
 import StockBadges from "@/components/StockBadges";
 import ViewToggle, { type ViewMode } from "@/components/ViewToggle";
@@ -60,8 +59,6 @@ export default function FavoritesClient({ role }: { role: Role }) {
 
   const cartItems = useCart((s) => s.items);
   const add = useCart((s) => s.add);
-  const setCartQty = useCart((s) => s.setQty);
-  const removeFromCart = useCart((s) => s.remove);
   const cartQtyById = useMemo(
     () => new Map(cartItems.map((i) => [i.productId, i.qty])),
     [cartItems]
@@ -175,38 +172,28 @@ export default function FavoritesClient({ role }: { role: Role }) {
     );
   }
 
-  // Cart control (qty selector / add / out-of-stock), shared by both views.
-  function CartControl({ row }: { row: CatalogRow }) {
-    const qtyInCart = cartQtyById.get(row.id) ?? 0;
+  // Local qty picker + add button, shared by both views (see AddToCartPanel).
+  function CartControl({
+    row,
+    layout,
+  }: {
+    row: CatalogRow;
+    layout?: "stack" | "row";
+  }) {
     const pair = isPairOnly(row.category);
-    if (qtyInCart > 0) {
-      return (
-        <CartQtySelector
-          qty={qtyInCart}
-          step={pair ? PAIR_STEP : 1}
-          onSet={(n) => setCartQty(row.id, n)}
-          onRemove={() => removeFromCart(row.id)}
-        />
-      );
-    }
-    if (row.totalQty === 0) {
-      return (
-        <button
-          disabled
-          title="Нет на складах"
-          className="btn h-9 w-full cursor-not-allowed whitespace-nowrap bg-gray-100 text-muted"
-        >
-          Нет в наличии
-        </button>
-      );
-    }
+    const step = pair ? PAIR_STEP : 1;
     return (
-      <button
-        onClick={() => addToCart(row)}
-        className="btn-accent h-9 w-full whitespace-nowrap transition-all duration-200"
-      >
-        <ShoppingCart size={16} /> В корзину
-      </button>
+      <AddToCartPanel
+        qty={pickQty[row.id] ?? step}
+        step={step}
+        layout={layout}
+        outOfStock={row.totalQty === 0}
+        inCartQty={cartQtyById.get(row.id) ?? 0}
+        onQtyChange={(n) =>
+          setPick(row.id, pair ? snapPairQty(n) : Math.max(1, n))
+        }
+        onAdd={(n) => addToCart(row, n)}
+      />
     );
   }
 
@@ -267,7 +254,7 @@ export default function FavoritesClient({ role }: { role: Role }) {
       {view === "list" ? (
         /* ─── List (table) view (scrolls horizontally on phones) ──────── */
         <div className="overflow-x-auto rounded-lg border border-line bg-white">
-          <table className="data-table min-w-[900px]">
+          <table className="data-table min-w-[1040px]">
             <thead>
               <tr>
                 <th className="w-14">Фото</th>
@@ -276,7 +263,7 @@ export default function FavoritesClient({ role }: { role: Role }) {
                 <th>Применяемость</th>
                 <th className="w-60">Наличие</th>
                 <th className="w-32 text-right">Цена</th>
-                <th className="w-44"></th>
+                <th className="w-72"></th>
               </tr>
             </thead>
             <tbody>
@@ -315,7 +302,11 @@ export default function FavoritesClient({ role }: { role: Role }) {
                     <StockBadges stocks={row.stocks} tooltip={whTooltip} />
                   </td>
                   <td className="text-right font-semibold text-ink">
-                    <PriceBlock row={row} compact />
+                    <PriceBlock
+                      row={row}
+                      compact
+                      qty={pickQty[row.id] ?? (isPairOnly(row.category) ? 2 : 1)}
+                    />
                   </td>
                   <td>
                     <div className="flex items-center gap-1">
@@ -326,9 +317,7 @@ export default function FavoritesClient({ role }: { role: Role }) {
                       >
                         <Heart size={15} className="fill-current" />
                       </button>
-                      <div className="w-32">
-                        <CartControl row={row} />
-                      </div>
+                      <CartControl row={row} layout="row" />
                     </div>
                   </td>
                 </tr>
@@ -405,16 +394,7 @@ export default function FavoritesClient({ role }: { role: Role }) {
                     <div className="mb-2.5">
                       <PriceBlock row={row} qty={selQty} />
                     </div>
-                    <AddToCartPanel
-                      qty={selQty}
-                      step={step}
-                      outOfStock={row.totalQty === 0}
-                      inCartQty={cartQtyById.get(row.id) ?? 0}
-                      onQtyChange={(n) =>
-                        setPick(row.id, pair ? snapPairQty(n) : Math.max(1, n))
-                      }
-                      onAdd={(n) => addToCart(row, n)}
-                    />
+                    <CartControl row={row} />
                   </div>
                 </div>
               </div>
