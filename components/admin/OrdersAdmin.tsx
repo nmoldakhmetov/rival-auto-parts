@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   Search,
   Loader2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Pencil,
   Save,
   X,
+  Gift,
+  PackageSearch,
 } from "lucide-react";
 import { formatTenge, formatDateTime } from "@/lib/format";
 
@@ -31,6 +34,28 @@ type Row = {
   debt: number;
   itemsCount: number;
   client: { fullName: string; email: string | null; login: string } | null;
+};
+
+type OrderItem = {
+  id: string;
+  sku: string;
+  name: string;
+  price: number;
+  qty: number;
+  isGift: boolean;
+};
+type OrderDetails = {
+  comment: string | null;
+  onecSent: boolean;
+  onecNumber: string | null;
+  client: {
+    fullName: string;
+    login: string;
+    email: string | null;
+    phone: string | null;
+    address: string | null;
+  } | null;
+  items: OrderItem[];
 };
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
@@ -66,6 +91,28 @@ export default function OrdersAdmin() {
   const [payEdit, setPayEdit] = useState<{ id: string; val: string } | null>(
     null
   );
+  // Expanded order → its contents. Fetched on first open and kept, so
+  // collapsing and reopening a row is instant.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [details, setDetails] = useState<Record<string, OrderDetails>>({});
+  const [detailsLoading, setDetailsLoading] = useState<string | null>(null);
+
+  function toggleDetails(id: string) {
+    if (openId === id) {
+      setOpenId(null);
+      return;
+    }
+    setOpenId(id);
+    if (details[id]) return;
+    setDetailsLoading(id);
+    fetch(`/api/admin/orders/${id}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.order) setDetails((m) => ({ ...m, [id]: d.order }));
+      })
+      .catch(() => {})
+      .finally(() => setDetailsLoading(null));
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -173,6 +220,7 @@ export default function OrdersAdmin() {
         <table className="data-table">
           <thead>
             <tr>
+              <th className="w-8"></th>
               <th className="w-24">№</th>
               <th className="w-36">Дата</th>
               <th>Клиент</th>
@@ -186,13 +234,28 @@ export default function OrdersAdmin() {
           <tbody>
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-12 text-center text-sm text-muted">
+                <td colSpan={9} className="py-12 text-center text-sm text-muted">
                   Заказов не найдено.
                 </td>
               </tr>
             )}
             {rows.map((r) => (
-              <tr key={r.id}>
+              <Fragment key={r.id}>
+              <tr
+                onClick={() => toggleDetails(r.id)}
+                title="Показать состав заказа"
+                className="cursor-pointer"
+              >
+                <td>
+                  <span
+                    className={cx(
+                      "flex h-6 w-6 items-center justify-center rounded text-muted transition-all duration-200",
+                      openId === r.id && "rotate-180 bg-accent/10 text-accent"
+                    )}
+                  >
+                    <ChevronDown size={15} />
+                  </span>
+                </td>
                 <td className="font-bold text-ink">№{r.orderNo}</td>
                 <td className="text-[11px] text-muted">
                   {formatDateTime(r.createdAt)}
@@ -216,7 +279,9 @@ export default function OrdersAdmin() {
                 <td className="text-right font-semibold text-ink">
                   {formatTenge(r.total)}
                 </td>
-                <td className="text-right">
+                {/* Interactive cells swallow the click so editing money or
+                    status doesn't fold the row open/closed. */}
+                <td className="text-right" onClick={(e) => e.stopPropagation()}>
                   {payEdit?.id === r.id ? (
                     <div className="flex items-center justify-end gap-1">
                       <input
@@ -267,7 +332,7 @@ export default function OrdersAdmin() {
                 >
                   {formatTenge(r.debt)}
                 </td>
-                <td>
+                <td onClick={(e) => e.stopPropagation()}>
                   <select
                     value={r.status}
                     onChange={(e) =>
@@ -286,6 +351,113 @@ export default function OrdersAdmin() {
                   </select>
                 </td>
               </tr>
+
+              {/* ── Expanded: what the client actually bought ────────── */}
+              {openId === r.id && (
+                <tr>
+                  <td colSpan={9} className="!p-0">
+                    <div className="animate-fade-in-up border-y border-line bg-gray-50/70 px-6 py-4">
+                      {detailsLoading === r.id && !details[r.id] ? (
+                        <div className="flex items-center gap-2 text-xs text-muted">
+                          <Loader2 size={14} className="animate-spin" />
+                          Загружаем состав заказа…
+                        </div>
+                      ) : !details[r.id] ? (
+                        <div className="text-xs text-muted">
+                          Не удалось загрузить состав заказа.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-muted">
+                            <span className="flex items-center gap-1.5 font-semibold text-ink">
+                              <PackageSearch size={14} className="text-accent" />
+                              Состав заказа №{r.orderNo}
+                            </span>
+                            {details[r.id].client?.phone && (
+                              <span>тел.: {details[r.id].client?.phone}</span>
+                            )}
+                            {details[r.id].client?.address && (
+                              <span>адрес: {details[r.id].client?.address}</span>
+                            )}
+                            <span>
+                              в 1С:{" "}
+                              {details[r.id].onecSent ? (
+                                <b className="text-green-700">
+                                  отправлен
+                                  {details[r.id].onecNumber
+                                    ? ` (№${details[r.id].onecNumber})`
+                                    : ""}
+                                </b>
+                              ) : (
+                                <b className="text-amber-700">не отправлен</b>
+                              )}
+                            </span>
+                          </div>
+
+                          <div className="overflow-hidden rounded-lg border border-line bg-white">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th className="w-40">Артикул</th>
+                                  <th>Наименование</th>
+                                  <th className="w-28 text-right">Цена</th>
+                                  <th className="w-20 text-center">Кол-во</th>
+                                  <th className="w-28 text-right">Сумма</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {details[r.id].items.map((it) => (
+                                  <tr
+                                    key={it.id}
+                                    className={it.isGift ? "bg-green-50/50" : undefined}
+                                  >
+                                    <td className="font-semibold text-ink">
+                                      {it.sku}
+                                    </td>
+                                    <td>
+                                      <span className="text-ink">{it.name}</span>
+                                      {it.isGift && (
+                                        <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                          <Gift size={10} /> подарок
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="text-right">
+                                      {it.isGift ? (
+                                        <span className="font-semibold text-green-700">
+                                          Бесплатно
+                                        </span>
+                                      ) : (
+                                        formatTenge(it.price)
+                                      )}
+                                    </td>
+                                    <td className="text-center font-semibold">
+                                      {it.qty}
+                                    </td>
+                                    <td className="text-right font-semibold text-ink">
+                                      {formatTenge(it.price * it.qty)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {details[r.id].comment && (
+                            <div className="mt-2 rounded-lg border border-line bg-white px-3 py-2 text-xs leading-relaxed text-ink/90">
+                              <span className="font-semibold text-muted">
+                                Комментарий:{" "}
+                              </span>
+                              {details[r.id].comment}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

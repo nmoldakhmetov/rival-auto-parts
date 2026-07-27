@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { managerOwnsClient } from "@/lib/admin-scope";
 
+export const dynamic = "force-dynamic";
+
 const STATUSES = new Set<string>([
   "NEW",
   "SENT",
@@ -13,6 +15,65 @@ const STATUSES = new Set<string>([
   "COMPLETED",
   "CANCELLED",
 ]);
+
+// GET: full order contents — what the client actually bought. Item rows are
+// snapshots taken at order time (sku/name/price), so they stay correct even
+// after a 1С sync changes the catalog. Managers may only open their own
+// clients' orders.
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: params.id },
+    include: {
+      items: { orderBy: [{ isGift: "asc" }, { sku: "asc" }] },
+      user: {
+        select: {
+          fullName: true,
+          login: true,
+          email: true,
+          phone: true,
+          address: true,
+        },
+      },
+    },
+  });
+  if (!order) {
+    return NextResponse.json({ error: "Заказ не найден" }, { status: 404 });
+  }
+  if (!(await managerOwnsClient(session, order.userId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  return NextResponse.json({
+    order: {
+      id: order.id,
+      orderNo: order.id.slice(-6).toUpperCase(),
+      createdAt: order.createdAt,
+      status: order.status,
+      total: Number(order.total),
+      paid: Number(order.paid),
+      comment: order.comment,
+      onecSent: order.onecSent,
+      onecNumber: order.onecNumber,
+      client: order.user,
+      items: order.items.map((i) => ({
+        id: i.id,
+        sku: i.sku,
+        name: i.name,
+        price: Number(i.price),
+        qty: i.qty,
+        isGift: i.isGift,
+      })),
+    },
+  });
+}
 
 // PATCH: change status / paid amount. When an order is ISSUED, its outstanding
 // debt is credited to the client's balance (once).
