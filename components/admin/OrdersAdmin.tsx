@@ -12,7 +12,10 @@ import {
   X,
   Gift,
   PackageSearch,
+  ImageOff,
+  ExternalLink,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { formatTenge, formatDateTime } from "@/lib/format";
 
 type OrderStatus =
@@ -43,6 +46,9 @@ type OrderItem = {
   price: number;
   qty: number;
   isGift: boolean;
+  // Live catalog links — null when the product no longer exists in 1С.
+  productId: string | null;
+  imageUrl: string | null;
 };
 type OrderDetails = {
   comment: string | null;
@@ -80,6 +86,7 @@ const STATUS_CLS: Record<OrderStatus, string> = {
 };
 
 export default function OrdersAdmin() {
+  const router = useRouter();
   const [rows, setRows] = useState<Row[]>([]);
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
@@ -96,6 +103,38 @@ export default function OrdersAdmin() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, OrderDetails>>({});
   const [detailsLoading, setDetailsLoading] = useState<string | null>(null);
+
+  // Hovered order line → floating photo preview. Rendered position:fixed so
+  // the surrounding overflow-hidden table wrappers cannot clip it.
+  const [preview, setPreview] = useState<{
+    top: number;
+    left: number;
+    item: OrderItem;
+  } | null>(null);
+
+  const PREVIEW_W = 240;
+  const PREVIEW_H = 280;
+
+  function showPreview(e: React.MouseEvent, item: OrderItem) {
+    if (!item.imageUrl) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // Prefer the right side of the row; flip left when it would overflow.
+    let left = rect.right + 12;
+    if (left + PREVIEW_W > window.innerWidth - 8) {
+      left = Math.max(8, rect.left - PREVIEW_W - 12);
+    }
+    const top = Math.min(
+      Math.max(8, rect.top - 40),
+      Math.max(8, window.innerHeight - PREVIEW_H - 8)
+    );
+    setPreview({ top, left, item });
+  }
+
+  // No product detail page exists — the catalog deep-link with an exact SKU
+  // puts the item first and highlights it (see the exactMatch handling).
+  function openInCatalog(item: OrderItem) {
+    router.push(`/catalog?q=${encodeURIComponent(item.sku)}`);
+  }
 
   function toggleDetails(id: string) {
     if (openId === id) {
@@ -398,6 +437,7 @@ export default function OrdersAdmin() {
                             <table className="data-table">
                               <thead>
                                 <tr>
+                                  <th className="w-14">Фото</th>
                                   <th className="w-40">Артикул</th>
                                   <th>Наименование</th>
                                   <th className="w-28 text-right">Цена</th>
@@ -409,10 +449,38 @@ export default function OrdersAdmin() {
                                 {details[r.id].items.map((it) => (
                                   <tr
                                     key={it.id}
-                                    className={it.isGift ? "bg-green-50/50" : undefined}
+                                    onMouseEnter={(e) => showPreview(e, it)}
+                                    onMouseLeave={() => setPreview(null)}
+                                    onClick={() => openInCatalog(it)}
+                                    title={`Открыть ${it.sku} в каталоге`}
+                                    className={cx(
+                                      "group/it cursor-pointer",
+                                      it.isGift && "bg-green-50/50"
+                                    )}
                                   >
+                                    <td>
+                                      {it.imageUrl ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={`/api/image?u=${encodeURIComponent(it.imageUrl)}`}
+                                          alt={it.sku}
+                                          loading="lazy"
+                                          className="h-10 w-10 rounded border border-line bg-white object-contain"
+                                        />
+                                      ) : (
+                                        <div className="flex h-10 w-10 items-center justify-center rounded border border-line bg-gray-50 text-gray-300">
+                                          <ImageOff size={14} />
+                                        </div>
+                                      )}
+                                    </td>
                                     <td className="font-semibold text-ink">
-                                      {it.sku}
+                                      <span className="inline-flex items-center gap-1.5 group-hover/it:text-accent">
+                                        {it.sku}
+                                        <ExternalLink
+                                          size={12}
+                                          className="opacity-0 transition-opacity group-hover/it:opacity-100"
+                                        />
+                                      </span>
                                     </td>
                                     <td>
                                       <span className="text-ink">{it.name}</span>
@@ -489,6 +557,34 @@ export default function OrdersAdmin() {
           </div>
         )}
       </div>
+
+      {/* Hover preview of the order line's product photo. */}
+      {preview && preview.item.imageUrl && (
+        <div
+          className="pointer-events-none fixed z-[70] rounded-xl border border-line bg-white p-2 shadow-2xl"
+          style={{ top: preview.top, left: preview.left, width: PREVIEW_W }}
+        >
+          <div className="flex h-[180px] items-center justify-center overflow-hidden rounded-lg bg-gray-50">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/api/image?u=${encodeURIComponent(preview.item.imageUrl)}`}
+              alt={preview.item.sku}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+          <div className="mt-2 px-1">
+            <div className="text-sm font-bold text-ink">
+              {preview.item.sku}
+            </div>
+            <div className="line-clamp-2 text-[11px] leading-snug text-muted">
+              {preview.item.name}
+            </div>
+            <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-accent">
+              <ExternalLink size={10} /> Нажмите, чтобы открыть в каталоге
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

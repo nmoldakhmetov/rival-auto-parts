@@ -32,7 +32,12 @@ export async function GET(
   const order = await prisma.order.findUnique({
     where: { id: params.id },
     include: {
-      items: { orderBy: [{ isGift: "asc" }, { sku: "asc" }] },
+      items: {
+        orderBy: [{ isGift: "asc" }, { sku: "asc" }],
+        // Photo + id come from the live product (null if it was removed from
+        // the catalog since); the textual fields stay order-time snapshots.
+        include: { product: { select: { id: true, imageUrl: true } } },
+      },
       user: {
         select: {
           fullName: true,
@@ -70,6 +75,8 @@ export async function GET(
         price: Number(i.price),
         qty: i.qty,
         isGift: i.isGift,
+        productId: i.product?.id ?? null,
+        imageUrl: i.product?.imageUrl ?? null,
       })),
     },
   });
