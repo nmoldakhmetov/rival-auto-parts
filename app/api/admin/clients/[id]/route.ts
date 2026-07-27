@@ -52,6 +52,23 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Handing a client over is an owner-level action. A MANAGER doing it would
+  // instantly lose access to that client (they only see their own) with no way
+  // to undo it — which is exactly how clients went missing in production.
+  // Unassigning ("— не назначен —") loses them just the same, so both are
+  // refused here; reassignment stays available to ADMIN/RA.
+  if (session?.role === "MANAGER" && "managerId" in body) {
+    if (data.managerId !== session.sub) {
+      return NextResponse.json(
+        {
+          error:
+            "Передать клиента другому менеджеру может только администратор",
+        },
+        { status: 403 }
+      );
+    }
+  }
+
   // Guard: if assigning a manager, make sure the target really is a MANAGER.
   if (typeof data.managerId === "string" && data.managerId) {
     const mgr = await prisma.user.findUnique({ where: { id: data.managerId } });

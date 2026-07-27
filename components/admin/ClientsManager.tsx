@@ -13,6 +13,7 @@ import {
   Warehouse as WarehouseIcon,
   Pencil,
   Wallet,
+  UserRound,
 } from "lucide-react";
 import { formatTenge, formatDateTime } from "@/lib/format";
 import type { Role } from "@/lib/jwt";
@@ -675,18 +676,32 @@ export default function ClientsManager({
                     {!c.email && !c.phone && !c.city && <span>—</span>}
                   </td>
                   <td>
-                    <select
-                      value={c.managerId ?? ""}
-                      onChange={(e) => assignManager(c.id, e.target.value)}
-                      className="input py-1.5 text-xs"
-                    >
-                      <option value="">— не назначен —</option>
-                      {managers.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.fullName}
-                        </option>
-                      ))}
-                    </select>
+                    {viewerRole === "MANAGER" ? (
+                      // A manager cannot hand their own client over (or unassign
+                      // them) — that would drop the client out of their list for
+                      // good. Reassignment is an ADMIN/RA action.
+                      <span
+                        title="Клиент закреплён за вами. Передать его другому менеджеру может только администратор."
+                        className="flex items-center gap-1.5 text-xs font-medium text-ink"
+                      >
+                        <UserRound size={13} className="shrink-0 text-muted" />
+                        {managers.find((m) => m.id === c.managerId)?.fullName ??
+                          "— не назначен —"}
+                      </span>
+                    ) : (
+                      <select
+                        value={c.managerId ?? ""}
+                        onChange={(e) => assignManager(c.id, e.target.value)}
+                        className="input py-1.5 text-xs"
+                      >
+                        <option value="">— не назначен —</option>
+                        {managers.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.fullName}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                   <td>
                     <BalanceCell
