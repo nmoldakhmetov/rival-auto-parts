@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { invalidatePrefix } from "@/lib/cache";
 import { getSession } from "@/lib/auth";
 import { managerOwnsClient } from "@/lib/admin-scope";
 
@@ -16,7 +15,6 @@ export async function PATCH(
     balance?: number | string;
     city?: string;
     comment?: string;
-    discountPercent?: number | string;
   };
   try {
     body = await req.json();
@@ -33,14 +31,10 @@ export async function PATCH(
   }
   if ("city" in body) data.city = String(body.city ?? "").trim() || null;
   if ("comment" in body) data.comment = String(body.comment ?? "").trim() || null;
-  if ("discountPercent" in body) {
-    data.discountPercent = Math.max(
-      0,
-      Math.min(95, Math.trunc(Number(body.discountPercent) || 0))
-    );
-    // The search route caches the per-user discount context for 30 s.
-    invalidatePrefix(`disc:${params.id}`);
-  }
+  // Discounts are deliberately NOT editable here: they all live in the
+  // «Скидки» section (DiscountRule), so a manager has exactly one place to
+  // set them. The legacy User.discountPercent column is still honoured by
+  // lib/pricing.ts — migrate leftovers with scripts/migrate-personal-discounts.mjs.
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Нечего обновлять" }, { status: 400 });

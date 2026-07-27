@@ -14,7 +14,9 @@ import {
   Pencil,
   Wallet,
   UserRound,
+  Percent,
 } from "lucide-react";
+import Link from "next/link";
 import { formatTenge, formatDateTime } from "@/lib/format";
 import type { Role } from "@/lib/jwt";
 import LocalityPicker from "@/components/admin/LocalityPicker";
@@ -792,43 +794,25 @@ function ClientDetails({
   onSave,
 }: {
   client: ClientRow;
-  onSave: (body: {
-    city: string;
-    comment: string;
-    discountPercent: number;
-  }) => void;
+  onSave: (body: { city: string; comment: string }) => void;
 }) {
   const [city, setCity] = useState(client.city ?? "");
   const [comment, setComment] = useState(client.comment ?? "");
-  const [discount, setDiscount] = useState(String(client.discountPercent));
   return (
     <div>
       <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-ink">
         <Wallet size={14} /> Детали клиента
       </div>
       <div className="space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="mb-1 block text-[11px] text-muted">
-              Населённый пункт
-            </label>
-            <LocalityPicker
-              value={city}
-              onChange={setCity}
-              className="py-1.5 text-xs"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] text-muted">
-              Личная скидка, %
-            </label>
-            <input
-              type="number"
-              className="input py-1.5 text-xs"
-              value={discount}
-              onChange={(e) => setDiscount(e.target.value)}
-            />
-          </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-muted">
+            Населённый пункт
+          </label>
+          <LocalityPicker
+            value={city}
+            onChange={setCity}
+            className="py-1.5 text-xs"
+          />
         </div>
         <div>
           <label className="mb-1 block text-[11px] text-muted">
@@ -841,17 +825,21 @@ function ClientDetails({
             onChange={(e) => setComment(e.target.value)}
           />
         </div>
+        {/* Скидки живут в одном месте — в разделе «Скидки». Раньше здесь было
+            ещё поле «Личная скидка», и менеджеры не понимали, каким из двух
+            путей её назначать. */}
+        <Link
+          href="/admin/discounts"
+          className="flex items-center gap-1.5 rounded-lg border border-line bg-gray-50 px-3 py-2 text-[11px] text-muted transition-colors hover:border-accent/40 hover:text-ink"
+        >
+          <Percent size={13} className="shrink-0 text-accent" />
+          <span>
+            Скидки и наценки для этого клиента настраиваются в разделе{" "}
+            <b className="text-ink">«Скидки»</b>
+          </span>
+        </Link>
         <button
-          onClick={() =>
-            onSave({
-              city,
-              comment,
-              discountPercent: Math.max(
-                0,
-                Math.min(95, parseInt(discount) || 0)
-              ),
-            })
-          }
+          onClick={() => onSave({ city, comment })}
           className="btn-accent px-3 py-1.5 text-xs"
         >
           <Save size={14} /> Сохранить детали
