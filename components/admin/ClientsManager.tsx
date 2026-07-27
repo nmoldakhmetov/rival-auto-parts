@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { formatTenge, formatDateTime } from "@/lib/format";
 import type { Role } from "@/lib/jwt";
+import LocalityPicker from "@/components/admin/LocalityPicker";
 
 type ClientRow = {
   id: string;
@@ -334,11 +335,10 @@ function CreateUserModal({
                 onChange={(e) => set("email", e.target.value)}
               />
             </Field>
-            <Field label="Город">
-              <input
-                className="input"
+            <Field label="Населённый пункт">
+              <LocalityPicker
                 value={form.city}
-                onChange={(e) => set("city", e.target.value)}
+                onChange={(v) => set("city", v)}
               />
             </Field>
           </div>
@@ -794,11 +794,13 @@ function ClientDetails({
       <div className="space-y-2">
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="mb-1 block text-[11px] text-muted">Город</label>
-            <input
-              className="input py-1.5 text-xs"
+            <label className="mb-1 block text-[11px] text-muted">
+              Населённый пункт
+            </label>
+            <LocalityPicker
               value={city}
-              onChange={(e) => setCity(e.target.value)}
+              onChange={setCity}
+              className="py-1.5 text-xs"
             />
           </div>
           <div>
