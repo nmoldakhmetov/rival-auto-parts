@@ -15,6 +15,12 @@ export async function PATCH(
     balance?: number | string;
     city?: string;
     comment?: string;
+    // Профиль: правится и для клиентов, и для сотрудников.
+    fullName?: string;
+    login?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
   };
   try {
     body = await req.json();
@@ -31,6 +37,30 @@ export async function PATCH(
   }
   if ("city" in body) data.city = String(body.city ?? "").trim() || null;
   if ("comment" in body) data.comment = String(body.comment ?? "").trim() || null;
+  if ("address" in body) data.address = String(body.address ?? "").trim() || null;
+  if ("email" in body) data.email = String(body.email ?? "").trim() || null;
+  if ("phone" in body) data.phone = String(body.phone ?? "").trim() || null;
+  // ФИО и логин обязательны — пустыми их затирать нельзя.
+  if ("fullName" in body) {
+    const v = String(body.fullName ?? "").trim();
+    if (!v) {
+      return NextResponse.json(
+        { error: "ФИО не может быть пустым" },
+        { status: 400 }
+      );
+    }
+    data.fullName = v;
+  }
+  if ("login" in body) {
+    const v = String(body.login ?? "").trim();
+    if (!v) {
+      return NextResponse.json(
+        { error: "Логин не может быть пустым" },
+        { status: 400 }
+      );
+    }
+    data.login = v;
+  }
   // Discounts are deliberately NOT editable here: they all live in the
   // «Скидки» section (DiscountRule), so a manager has exactly one place to
   // set them. The legacy User.discountPercent column is still honoured by
@@ -40,9 +70,29 @@ export async function PATCH(
     return NextResponse.json({ error: "Нечего обновлять" }, { status: 400 });
   }
 
-  // A manager may only edit their own clients.
   const session = await getSession();
-  if (session && !(await managerOwnsClient(session, params.id))) {
+  // ACCOUNTANT has the clients tab but is read-only there.
+  if (session?.role === "ACCOUNTANT") {
+    return NextResponse.json(
+      { error: "У бухгалтера нет прав на изменение данных" },
+      { status: 403 }
+    );
+  }
+
+  // Staff records (MANAGER / ACCOUNTANT / RA) are owner-level territory.
+  const target = await prisma.user.findUnique({
+    where: { id: params.id },
+    select: { role: true },
+  });
+  if (!target) {
+    return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
+  }
+  if (target.role !== "CLIENT" && session?.role !== "ADMIN" && session?.role !== "RA") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // A manager may only edit their own clients.
+  if (session && target.role === "CLIENT" && !(await managerOwnsClient(session, params.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -74,6 +124,14 @@ export async function PATCH(
     }
   }
 
-  await prisma.user.update({ where: { id: params.id }, data });
+  try {
+    await prisma.user.update({ where: { id: params.id }, data });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const field = (e.meta?.target as string[])?.join(", ") ?? "поле";
+      return NextResponse.json({ error: `Уже занято: ${field}` }, { status: 409 });
+    }
+    throw e;
+  }
   return NextResponse.json({ ok: true });
 }

@@ -8,6 +8,15 @@ import { buildOneCComment, sendOrderToOneC } from "@/lib/onec-orders";
 import { getActiveGiftRules } from "@/lib/gifts";
 import { earnedGiftQty } from "@/lib/gift-earn";
 import { isPairOnly, snapPairQty } from "@/lib/pair-only";
+import { sendOrderMail } from "@/lib/mail";
+import {
+  isPaymentMethod,
+  isDeliveryMethod,
+  PAYMENT_LABELS,
+  DELIVERY_LABELS,
+  type PaymentMethod,
+  type DeliveryMethod,
+} from "@/lib/order-options";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +39,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { items?: IncomingItem[]; comment?: string };
+  let body: {
+    items?: IncomingItem[];
+    comment?: string;
+    paymentMethod?: string;
+    deliveryMethod?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -129,11 +143,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const paymentMethod: PaymentMethod = isPaymentMethod(body.paymentMethod)
+    ? body.paymentMethod
+    : "CASH";
+  const deliveryMethod: DeliveryMethod = isDeliveryMethod(body.deliveryMethod)
+    ? body.deliveryMethod
+    : "DELIVERY";
+
   const order = await prisma.order.create({
     data: {
       userId: session.sub,
       status: "NEW",
       comment: body.comment?.trim() || null,
+      paymentMethod,
+      deliveryMethod,
       total,
       items: { create: orderItems },
     },
@@ -147,7 +170,13 @@ export async function POST(req: NextRequest) {
     site_order_id: orderNo,
     client_name: me?.fullName ?? "",
     client_phone: me?.phone ?? "",
-    comment: buildOneCComment(me?.address, body.comment),
+    comment: buildOneCComment({
+      orderNo,
+      pickup: deliveryMethod === "PICKUP",
+      city: me?.city,
+      address: me?.address,
+      comment: body.comment,
+    }),
     products: onecProducts,
   });
   if (onec.ok) {
@@ -176,10 +205,42 @@ export async function POST(req: NextRequest) {
   const text =
     `Здравствуйте! Заказ №${orderNo}` +
     (me?.fullName ? ` от «${me.fullName}»` : "") +
-    `:\n${lines.join("\n")}\n\nИтого: ${formatTenge(total)}` +
+    `:\n${lines.join("\n")}` +
+    `\n\nИтого: ${formatTenge(total)}` +
+    `\nОплата: ${PAYMENT_LABELS[paymentMethod]}` +
+    `\nПолучение: ${DELIVERY_LABELS[deliveryMethod]}` +
     (body.comment?.trim() ? `\nКомментарий: ${body.comment.trim()}` : "");
 
   const waLink = manager?.phone ? buildWaLink(manager.phone, text) : null;
+
+  // Notify the assigned manager by e-mail. Best-effort: a mail outage must
+  // never fail an order that is already saved and pushed to 1С.
+  const mail = await sendOrderMail({
+    orderNo,
+    createdAt: order.createdAt,
+    total,
+    paymentMethod,
+    deliveryMethod,
+    comment: body.comment?.trim() || null,
+    client: {
+      fullName: me?.fullName ?? "",
+      login: me?.login ?? "",
+      email: me?.email ?? null,
+      phone: me?.phone ?? null,
+      city: me?.city ?? null,
+      address: me?.address ?? null,
+    },
+    manager: manager
+      ? { fullName: manager.fullName, email: manager.email }
+      : null,
+    items: orderItems.map((i) => ({
+      sku: i.sku,
+      name: i.name,
+      qty: i.qty,
+      price: i.price,
+      isGift: i.isGift,
+    })),
+  }).catch((e) => ({ ok: false, error: String(e) }));
 
   return NextResponse.json({
     ok: true,
@@ -188,6 +249,7 @@ export async function POST(req: NextRequest) {
     total,
     waLink,
     onecSent: onec.ok,
+    mailSent: mail.ok,
     manager: manager
       ? { fullName: manager.fullName, phone: manager.phone }
       : null,

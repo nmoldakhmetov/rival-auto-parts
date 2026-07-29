@@ -22,6 +22,18 @@ enum Role {
   CLIENT
 }
 
+// Способ оплаты, выбранный клиентом в корзине.
+enum PaymentMethod {
+  CASH // наличный расчёт
+  TRANSFER // перевод
+}
+
+// Способ получения заказа.
+enum DeliveryMethod {
+  DELIVERY // доставка по адресу из карточки клиента
+  PICKUP // самовывоз
+}
+
 enum OrderStatus {
   NEW // заказ принят
   SENT // отправлен менеджеру (WhatsApp)
@@ -200,6 +212,9 @@ model Order {
   userId  String
   status  OrderStatus @default(NEW)
   comment String?
+  // Выбирается клиентом при оформлении; уходит в 1С и в письмо менеджеру.
+  paymentMethod PaymentMethod  @default(CASH)
+  deliveryMethod DeliveryMethod @default(DELIVERY)
   total   Decimal     @default(0) @db.Decimal(12, 2)
   paid    Decimal     @default(0) @db.Decimal(12, 2) // оплачено; долг = total − paid
   debtApplied Boolean @default(false) // долг уже зачислен в баланс клиента

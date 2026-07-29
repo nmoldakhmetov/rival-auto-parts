@@ -23,19 +23,40 @@ export type OneCOrderResult = {
   error?: string;
 };
 
-// 1С order comment: "Доставка, Адрес: <адрес клиента> <комментарий>".
-// Empty parts are dropped so the string never carries dangling commas or
-// doubled spaces (multi-line client comments are flattened to one line).
-export function buildOneCComment(
-  address?: string | null,
-  comment?: string | null
-): string {
-  const addr = (address ?? "").replace(/\s+/g, " ").trim();
-  const note = (comment ?? "").replace(/\s+/g, " ").trim();
-  let out = "Доставка";
-  if (addr) out += `, Адрес: ${addr}`;
-  if (note) out += addr ? ` ${note}` : `, ${note}`;
-  return out;
+// 1С order comment.
+//
+//   самовывоз → "Заказ с сайта №K1-2085. Самовывоз"
+//   доставка  → "Заказ с сайта №K1-2085. Доставка, Адрес: Казахстан, Алматы,
+//                Жибек жолы 11 (комментарий клиента)"
+//
+// The delivery address is composed from the client card: населённый пункт +
+// адрес. Empty parts are dropped, so the string never carries dangling commas
+// or doubled spaces; multi-line client comments are flattened to one line.
+const clean = (s?: string | null) => (s ?? "").replace(/\s+/g, " ").trim();
+
+export function buildOneCComment(opts: {
+  orderNo: string;
+  pickup: boolean;
+  city?: string | null;
+  address?: string | null;
+  comment?: string | null;
+}): string {
+  const parts: string[] = [];
+  if (opts.pickup) {
+    parts.push("Самовывоз");
+  } else {
+    // «Казахстан, Алматинская область, Алматы» + «Жибек жолы 11»
+    const full = [clean(opts.city), clean(opts.address)]
+      .filter(Boolean)
+      .join(", ");
+    parts.push(full ? `Доставка, Адрес: ${full}` : "Доставка");
+  }
+  const note = clean(opts.comment);
+  if (note) parts.push(note);
+
+  const orderNo = clean(opts.orderNo);
+  const head = orderNo ? `Заказ с сайта №${orderNo}.` : "Заказ с сайта.";
+  return `${head} ${parts.join(" ")}`.trim();
 }
 
 function ordersUrl(): string | null {

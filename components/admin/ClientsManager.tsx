@@ -20,6 +20,7 @@ import Link from "next/link";
 import { formatTenge, formatDateTime } from "@/lib/format";
 import type { Role } from "@/lib/jwt";
 import LocalityPicker from "@/components/admin/LocalityPicker";
+import { toast } from "@/store/toast";
 
 type ClientRow = {
   id: string;
@@ -409,10 +410,15 @@ function Field({
 function StaffTable({
   rows,
   onToggleActive,
+  onSave,
+  canEdit,
 }: {
   rows: StaffRow[];
   onToggleActive: (s: StaffRow) => void;
+  onSave: (id: string, body: Record<string, unknown>) => void;
+  canEdit: boolean;
 }) {
+  const [editId, setEditId] = useState<string | null>(null);
   return (
     <div className="overflow-hidden rounded-lg border border-line bg-white">
       <table className="data-table">
@@ -422,18 +428,23 @@ function StaffTable({
             <th>Контакты</th>
             <th className="w-44">Роль</th>
             <th className="w-24 text-center">Статус</th>
+            {canEdit && <th className="w-28"></th>}
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={4} className="py-12 text-center text-sm text-muted">
+              <td
+                colSpan={canEdit ? 5 : 4}
+                className="py-12 text-center text-sm text-muted"
+              >
                 Пока никого.
               </td>
             </tr>
           )}
           {rows.map((s) => (
-            <tr key={s.id}>
+            <Fragment key={s.id}>
+            <tr>
               <td>
                 <div className="font-semibold text-ink">{s.fullName}</div>
                 <div className="text-[11px] text-muted">
@@ -474,10 +485,105 @@ function StaffTable({
                   )}
                 </button>
               </td>
+              {canEdit && (
+                <td>
+                  <button
+                    onClick={() => setEditId(editId === s.id ? null : s.id)}
+                    className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-muted transition-colors hover:border-accent/40 hover:text-ink"
+                  >
+                    <Pencil size={12} />
+                    {editId === s.id ? "Закрыть" : "Изменить"}
+                  </button>
+                </td>
+              )}
             </tr>
+            {canEdit && editId === s.id && (
+              <tr>
+                <td colSpan={5} className="!p-0">
+                  <div className="border-y border-line bg-gray-50/70 px-4 py-3">
+                    <StaffEditor
+                      member={s}
+                      onSave={(body) => {
+                        onSave(s.id, body);
+                        setEditId(null);
+                      }}
+                      onCancel={() => setEditId(null)}
+                    />
+                  </div>
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Inline profile editor for a staff record (ADMIN/RA only).
+function StaffEditor({
+  member,
+  onSave,
+  onCancel,
+}: {
+  member: StaffRow;
+  onSave: (body: Record<string, unknown>) => void;
+  onCancel: () => void;
+}) {
+  const [fullName, setFullName] = useState(member.fullName);
+  const [login, setLogin] = useState(member.login);
+  const [email, setEmail] = useState(member.email ?? "");
+  const [phone, setPhone] = useState(member.phone ?? "");
+  const field = (
+    label: string,
+    value: string,
+    set: (v: string) => void,
+    hint?: string
+  ) => (
+    <div>
+      <label className="mb-1 block text-[11px] text-muted">{label}</label>
+      <input
+        className="input py-1.5 text-xs"
+        value={value}
+        onChange={(e) => set(e.target.value)}
+      />
+      {hint && <p className="mt-0.5 text-[10px] text-muted">{hint}</p>}
+    </div>
+  );
+  return (
+    <div className="space-y-2">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {field("ФИО", fullName, setFullName)}
+        {field("Логин", login, setLogin)}
+        {field(
+          member.role === "MANAGER" ? "WhatsApp (тел.)" : "Телефон",
+          phone,
+          setPhone
+        )}
+        {field(
+          "Email",
+          email,
+          setEmail,
+          member.role === "MANAGER"
+            ? "На этот адрес приходят уведомления о заказах его клиентов"
+            : undefined
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => onSave({ fullName, login, email, phone })}
+          className="btn-accent px-3 py-1.5 text-xs"
+        >
+          <Save size={14} /> Сохранить
+        </button>
+        <button
+          onClick={onCancel}
+          className="rounded border border-line px-3 py-1.5 text-xs text-muted hover:text-ink"
+        >
+          Отмена
+        </button>
+      </div>
     </div>
   );
 }
@@ -517,9 +623,33 @@ export default function ClientsManager({
     { key: "RA", label: "RA", count: staffByRole("RA").length },
   ];
 
-  const patch = (id: string, body: Record<string, unknown>) => {
-    patchClient(id, body);
+  // Optimistic update, rolled back if the server rejects (e.g. a login that is
+  // already taken) so the table never shows data that was not saved.
+  const patch = async (id: string, body: Record<string, unknown>) => {
+    const prev = clients;
     setClients((cs) => cs.map((c) => (c.id === id ? { ...c, ...body } : c)));
+    const res = await patchClient(id, body);
+    if (!res.ok) {
+      setClients(prev);
+      const d = await res.json().catch(() => ({}));
+      toast.error(d.error || "Не удалось сохранить изменения");
+    } else {
+      toast.success("Сохранено");
+    }
+  };
+
+  // Same, for staff records (managers / accountants / RA).
+  const patchStaff = async (id: string, body: Record<string, unknown>) => {
+    const prev = staff;
+    setStaff((ss) => ss.map((s) => (s.id === id ? { ...s, ...body } : s)));
+    const res = await patchClient(id, body);
+    if (!res.ok) {
+      setStaff(prev);
+      const d = await res.json().catch(() => ({}));
+      toast.error(d.error || "Не удалось сохранить изменения");
+    } else {
+      toast.success("Сохранено");
+    }
   };
 
   async function assignManager(clientId: string, managerId: string) {
@@ -637,7 +767,12 @@ export default function ClientsManager({
       )}
 
       {tab !== "CLIENT" ? (
-        <StaffTable rows={staffByRole(tab)} onToggleActive={toggleStaffActive} />
+        <StaffTable
+          rows={staffByRole(tab)}
+          onToggleActive={toggleStaffActive}
+          onSave={patchStaff}
+          canEdit={isOwner}
+        />
       ) : (
       <div className="overflow-hidden rounded-lg border border-line bg-white">
         <table className="data-table">
@@ -794,8 +929,21 @@ function ClientDetails({
   onSave,
 }: {
   client: ClientRow;
-  onSave: (body: { city: string; comment: string }) => void;
+  onSave: (body: {
+    fullName: string;
+    login: string;
+    email: string;
+    phone: string;
+    address: string;
+    city: string;
+    comment: string;
+  }) => void;
 }) {
+  const [fullName, setFullName] = useState(client.fullName);
+  const [login, setLogin] = useState(client.login);
+  const [email, setEmail] = useState(client.email ?? "");
+  const [phone, setPhone] = useState(client.phone ?? "");
+  const [address, setAddress] = useState(client.address ?? "");
   const [city, setCity] = useState(client.city ?? "");
   const [comment, setComment] = useState(client.comment ?? "");
   return (
@@ -804,6 +952,42 @@ function ClientDetails({
         <Wallet size={14} /> Детали клиента
       </div>
       <div className="space-y-2">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-[11px] text-muted">
+              ФИО / Организация
+            </label>
+            <input
+              className="input py-1.5 text-xs"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-muted">Логин</label>
+            <input
+              className="input py-1.5 text-xs"
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-muted">Телефон</label>
+            <input
+              className="input py-1.5 text-xs"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-muted">Email</label>
+            <input
+              className="input py-1.5 text-xs"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+        </div>
         <div>
           <label className="mb-1 block text-[11px] text-muted">
             Населённый пункт
@@ -812,6 +996,16 @@ function ClientDetails({
             value={city}
             onChange={setCity}
             className="py-1.5 text-xs"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-muted">
+            Адрес (улица, дом — уходит в 1С при доставке)
+          </label>
+          <input
+            className="input py-1.5 text-xs"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
           />
         </div>
         <div>
@@ -839,7 +1033,9 @@ function ClientDetails({
           </span>
         </Link>
         <button
-          onClick={() => onSave({ city, comment })}
+          onClick={() =>
+            onSave({ fullName, login, email, phone, address, city, comment })
+          }
           className="btn-accent px-3 py-1.5 text-xs"
         >
           <Save size={14} /> Сохранить детали

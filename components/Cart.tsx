@@ -20,6 +20,14 @@ import { earnedGiftQty, type GiftRuleLite as GiftRule } from "@/lib/gift-earn";
 import EmptyState from "@/components/EmptyState";
 import CartQtySelector from "@/components/CartQtySelector";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import {
+  PAYMENT_OPTIONS,
+  DELIVERY_OPTIONS,
+  PAYMENT_LABELS,
+  DELIVERY_LABELS,
+  type PaymentMethod,
+  type DeliveryMethod,
+} from "@/lib/order-options";
 
 type CheckoutResult = {
   orderNo: string;
@@ -40,6 +48,10 @@ export default function Cart({
   const [done, setDone] = useState<CheckoutResult | null>(null);
   // «Оформить заказ» opens a confirmation dialog first — no accidental orders.
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Способ оплаты / получения — уходят в 1С, в письмо менеджеру и в WhatsApp.
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
+  const [deliveryMethod, setDeliveryMethod] =
+    useState<DeliveryMethod>("DELIVERY");
 
   const [giftRules, setGiftRules] = useState<GiftRule[]>([]);
   const [giftProducts, setGiftProducts] = useState<Record<string, CatalogRow>>(
@@ -104,6 +116,8 @@ export default function Cart({
         body: JSON.stringify({
           items: items.map((i) => ({ productId: i.productId, qty: i.qty })),
           comment,
+          paymentMethod,
+          deliveryMethod,
         }),
       });
       const data = await res.json();
@@ -478,6 +492,51 @@ export default function Cart({
             </div>
           )}
 
+          {/* Способ оплаты и получения — обязательные поля заказа. */}
+          <div className="mb-3 space-y-2">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-ink">
+                Способ оплаты
+              </label>
+              <select
+                value={paymentMethod}
+                onChange={(e) =>
+                  setPaymentMethod(e.target.value as PaymentMethod)
+                }
+                className="input"
+              >
+                {PAYMENT_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-ink">
+                Способ доставки
+              </label>
+              <select
+                value={deliveryMethod}
+                onChange={(e) =>
+                  setDeliveryMethod(e.target.value as DeliveryMethod)
+                }
+                className="input"
+              >
+                {DELIVERY_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] leading-snug text-muted">
+                {deliveryMethod === "PICKUP"
+                  ? "Заберёте заказ на складе самостоятельно."
+                  : "Доставим по адресу из вашей карточки — уточнить его можно у менеджера."}
+              </p>
+            </div>
+          </div>
+
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
@@ -528,7 +587,11 @@ export default function Cart({
           <ConfirmDialog
             open={confirmOpen}
             title="Оформление заказа"
-            text={`Вы действительно хотите оформить этот заказ? Сумма — ${formatTenge(total)}.`}
+            text={
+              `Вы действительно хотите оформить этот заказ? Сумма — ${formatTenge(total)}. ` +
+              `Оплата: ${PAYMENT_LABELS[paymentMethod].toLowerCase()}, ` +
+              `получение: ${DELIVERY_LABELS[deliveryMethod].toLowerCase()}.`
+            }
             confirmLabel="Да"
             cancelLabel="Нет"
             onCancel={() => setConfirmOpen(false)}
@@ -537,10 +600,6 @@ export default function Cart({
               checkout();
             }}
           />
-          <p className="mt-2 text-center text-[11px] text-muted">
-            Оплата не требуется — заказ уйдёт менеджеру в WhatsApp
-          </p>
-
           <button
             onClick={clear}
             className="mt-3 w-full text-center text-xs text-muted hover:text-accent"
