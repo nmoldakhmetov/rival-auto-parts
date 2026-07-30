@@ -241,6 +241,22 @@ export async function POST(req: NextRequest) {
     })),
   }).catch((e) => ({ ok: false, error: String(e) }));
 
+  // Письмо — best-effort, но молчать о сбое нельзя: без этой строки в логах
+  // «почта не работает» невозможно отличить от «SMTP не настроен» или «у
+  // менеджера не заполнен e-mail».
+  if (mail.ok) {
+    console.log(
+      `[mail] Заказ №${orderNo}: письмо отправлено на ${manager?.email ?? process.env.ORDER_MAIL_TO}`
+    );
+  } else {
+    console.warn(
+      `[mail] Заказ №${orderNo}: письмо НЕ отправлено — ${mail.error ?? "причина неизвестна"}` +
+        (manager
+          ? ` (менеджер «${manager.fullName}», e-mail: ${manager.email ?? "не заполнен"})`
+          : " (за клиентом не закреплён менеджер)")
+    );
+  }
+
   return NextResponse.json({
     ok: true,
     orderId: order.id,
