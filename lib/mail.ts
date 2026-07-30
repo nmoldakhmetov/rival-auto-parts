@@ -27,6 +27,9 @@ export type OrderMailItem = {
   qty: number;
   price: number;
   isGift: boolean;
+  // «Направление» — склады с остатком, к которым у клиента есть доступ.
+  // Считается на момент письма (в заказе склад не фиксируется).
+  warehouses: string[];
 };
 
 export type OrderMailData = {
@@ -94,22 +97,26 @@ export function buildOrderMail(d: OrderMailData): {
     .filter(Boolean)
     .join(", ");
 
+  const cell = "padding:8px;border-bottom:1px solid #e5e7eb";
   const itemRows = d.items
-    .map(
-      (i) => `<tr>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb">
+    .map((i) => {
+      const inStock = i.warehouses.length > 0;
+      return `<tr>
+        <td style="${cell}">
           <b>${esc(i.sku)}</b><br><span style="color:#6b7280;font-size:12px">${esc(i.name)}</span>
           ${i.isGift ? '<br><span style="color:#16a34a;font-size:12px;font-weight:bold">подарок</span>' : ""}
         </td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center">${i.qty}</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">${
-          i.isGift ? "Бесплатно" : esc(formatTenge(i.price))
+        <td style="${cell};text-align:center">${i.qty}</td>
+        <td style="${cell};text-align:center;color:${inStock ? "#15803d" : "#b45309"}">${
+          inStock ? "в наличии" : "под заказ"
         }</td>
-        <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right"><b>${esc(
-          formatTenge(i.price * i.qty)
-        )}</b></td>
-      </tr>`
-    )
+        <td style="${cell};font-size:12px">${esc(i.warehouses.join(", ") || "—")}</td>
+        <td style="${cell};text-align:center">${i.qty}</td>
+        <td style="${cell};text-align:right"><b>${
+          i.isGift ? "Бесплатно" : esc(formatTenge(i.price * i.qty))
+        }</b></td>
+      </tr>`;
+    })
     .join("");
 
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f1f1f;max-width:680px">
@@ -120,13 +127,11 @@ export function buildOrderMail(d: OrderMailData): {
   <table cellpadding="0" cellspacing="0" style="font-size:13px;margin-bottom:18px">
     ${row("Клиент", d.client.fullName)}
     ${row("Контактное лицо (ФИО)", d.client.fullName)}
-    ${row("Логин", d.client.login)}
     ${row("Телефоны", d.client.phone)}
     ${row("Email", d.client.email)}
     ${row("Способ оплаты", PAYMENT_LABELS[d.paymentMethod])}
     ${row("Способ доставки", DELIVERY_LABELS[d.deliveryMethod])}
     ${pickup ? "" : row("Адрес доставки", fullAddress || "—")}
-    ${row("Менеджер", d.manager?.fullName)}
   </table>
 
   <h3 style="font-size:15px;margin:0 0 6px">Содержание заказа</h3>
@@ -134,8 +139,10 @@ export function buildOrderMail(d: OrderMailData): {
     <thead>
       <tr style="background:#f7f7f8">
         <th style="padding:8px;text-align:left;border-bottom:1px solid #e5e7eb">Наименование детали</th>
+        <th style="padding:8px;text-align:center;border-bottom:1px solid #e5e7eb;width:80px">Заказано</th>
+        <th style="padding:8px;text-align:center;border-bottom:1px solid #e5e7eb;width:90px">Срок</th>
+        <th style="padding:8px;text-align:left;border-bottom:1px solid #e5e7eb;width:130px">Направление</th>
         <th style="padding:8px;text-align:center;border-bottom:1px solid #e5e7eb;width:70px">Кол-во</th>
-        <th style="padding:8px;text-align:right;border-bottom:1px solid #e5e7eb;width:110px">Цена</th>
         <th style="padding:8px;text-align:right;border-bottom:1px solid #e5e7eb;width:120px">Сумма</th>
       </tr>
     </thead>
@@ -164,7 +171,7 @@ export function buildOrderMail(d: OrderMailData): {
     "",
     "Информация о клиенте",
     `  Клиент: ${d.client.fullName}`,
-    `  Логин: ${d.client.login}`,
+    `  Контактное лицо (ФИО): ${d.client.fullName}`,
     d.client.phone ? `  Телефоны: ${d.client.phone}` : "",
     d.client.email ? `  Email: ${d.client.email}` : "",
     `  Способ оплаты: ${PAYMENT_LABELS[d.paymentMethod]}`,
@@ -174,9 +181,10 @@ export function buildOrderMail(d: OrderMailData): {
     "Содержание заказа",
     ...d.items.map(
       (i) =>
-        `  ${i.sku} — ${i.name} × ${i.qty} шт. — ${
-          i.isGift ? "подарок" : formatTenge(i.price * i.qty)
-        }`
+        `  ${i.sku} — ${i.name} × ${i.qty} шт. — ` +
+        `${i.warehouses.length ? "в наличии" : "под заказ"}` +
+        `${i.warehouses.length ? ` (${i.warehouses.join(", ")})` : ""} — ` +
+        `${i.isGift ? "подарок" : formatTenge(i.price * i.qty)}`
     ),
     "",
     `Общая сумма заказа: ${formatTenge(d.total)}`,

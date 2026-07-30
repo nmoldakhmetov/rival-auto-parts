@@ -212,6 +212,30 @@ export async function POST(req: NextRequest) {
 
   const waLink = manager?.phone ? buildWaLink(manager.phone, text) : null;
 
+  // «Направление» и «Срок» в письме: склады с остатком, к которым у клиента
+  // есть доступ. Берём на момент письма — в заказе склад не фиксируется.
+  const accessRows = await prisma.clientWarehouseAccess.findMany({
+    where: { userId: session.sub },
+    select: { warehouseId: true },
+  });
+  const allowedWhIds = accessRows.map((a) => a.warehouseId);
+  const stockRows = allowedWhIds.length
+    ? await prisma.stock.findMany({
+        where: {
+          productId: { in: orderItems.map((i) => i.productId) },
+          warehouseId: { in: allowedWhIds },
+          qty: { gt: 0 },
+        },
+        select: { productId: true, warehouse: { select: { name: true } } },
+      })
+    : [];
+  const whByProduct = new Map<string, string[]>();
+  for (const s of stockRows) {
+    const list = whByProduct.get(s.productId) ?? [];
+    list.push(s.warehouse.name);
+    whByProduct.set(s.productId, list);
+  }
+
   // Notify the assigned manager by e-mail. Best-effort: a mail outage must
   // never fail an order that is already saved and pushed to 1С.
   const mail = await sendOrderMail({
@@ -238,6 +262,7 @@ export async function POST(req: NextRequest) {
       qty: i.qty,
       price: i.price,
       isGift: i.isGift,
+      warehouses: whByProduct.get(i.productId) ?? [],
     })),
   }).catch((e) => ({ ok: false, error: String(e) }));
 
