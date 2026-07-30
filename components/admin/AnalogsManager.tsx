@@ -41,6 +41,12 @@ export default function AnalogsManager({
   const [fileName, setFileName] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  // Живой прогресс: чтение файла → разбор → загрузка порциями.
+  const [progress, setProgress] = useState<{
+    stage: "read" | "parse" | "upload";
+    done: number;
+    total: number;
+  } | null>(null);
 
   const [rows, setRows] = useState<Analog[]>([]);
   const [q, setQ] = useState("");
@@ -76,32 +82,81 @@ export default function AnalogsManager({
     return () => clearTimeout(t);
   }, [loadList]);
 
+  // The real files are 7+ MB / 300k rows. Sending them in one request failed
+  // (Vercel caps a body at 4.5 MB, IIS/ARR has its own limits), so the sheet is
+  // parsed HERE and uploaded in batches — which also gives honest progress.
+  const CHUNK = 10_000;
+
   async function doImport() {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
     setImporting(true);
     setImportResult(null);
+    setProgress({ stage: "read", done: 0, total: 0 });
+    const started = Date.now();
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/admin/analogs/import", {
-        method: "POST",
-        body: fd,
-      });
-      const data: ImportResult = await res.json();
-      setImportResult(data);
-      if (data.ok) {
-        setTotal(data.imported);
-        setPage(1);
-        loadList();
+      const buf = await file.arrayBuffer();
+      setProgress({ stage: "parse", done: 0, total: 0 });
+      // Dynamic imports keep the xlsx parser out of the main bundle.
+      const [XLSX, { parseAnalogRows }] = await Promise.all([
+        import("xlsx"),
+        import("@/lib/analog-parse"),
+      ]);
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheetName = wb.SheetNames[0];
+      const sheet = sheetName ? wb.Sheets[sheetName] : undefined;
+      if (!sheet) throw new Error("В файле не найдено ни одного листа");
+      const sheetRows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        defval: "",
+        blankrows: false,
+      }) as unknown[][];
+      const records = parseAnalogRows(sheetRows);
+      if (records.length === 0) {
+        throw new Error(
+          "В файле не нашлось ни одной пары «код → артикул». Проверьте, что данные лежат в первых трёх колонках."
+        );
       }
-    } catch {
+
+      let imported = 0;
+      for (let i = 0; i < records.length; i += CHUNK) {
+        setProgress({ stage: "upload", done: i, total: records.length });
+        const res = await fetch("/api/admin/analogs/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reset: i === 0, // первая порция очищает старую базу
+            records: records.slice(i, i + CHUNK),
+          }),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(
+            d.error || `Сервер вернул ${res.status} на порции ${i / CHUNK + 1}`
+          );
+        }
+        const d = await res.json();
+        imported += d.imported ?? 0;
+      }
+
+      setProgress(null);
+      setImportResult({
+        ok: true,
+        rows: sheetRows.length,
+        imported,
+        durationMs: Date.now() - started,
+      });
+      setTotal(imported);
+      setPage(1);
+      loadList();
+    } catch (e) {
+      setProgress(null);
       setImportResult({
         ok: false,
         rows: 0,
         imported: 0,
-        durationMs: 0,
-        error: "Сервер недоступен или файл слишком большой",
+        durationMs: Date.now() - started,
+        error: e instanceof Error ? e.message : "Не удалось выполнить импорт",
       });
     } finally {
       setImporting(false);
@@ -206,6 +261,39 @@ export default function AnalogsManager({
             {importing ? "Импорт…" : "Импортировать"}
           </button>
         </div>
+
+        {progress && (
+          <div className="mt-3 rounded-lg border border-line bg-gray-50 px-3 py-2.5">
+            <div className="mb-1.5 flex items-center justify-between text-xs">
+              <span className="font-medium text-ink">
+                {progress.stage === "read" && "Читаем файл…"}
+                {progress.stage === "parse" &&
+                  "Разбираем таблицу (может занять несколько секунд)…"}
+                {progress.stage === "upload" &&
+                  `Загружаем: ${formatNum(progress.done)} из ${formatNum(progress.total)}`}
+              </span>
+              {progress.stage === "upload" && progress.total > 0 && (
+                <span className="font-bold tabular-nums text-accent">
+                  {Math.round((progress.done / progress.total) * 100)}%
+                </span>
+              )}
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-gray-200">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-200"
+                style={{
+                  width:
+                    progress.stage === "upload" && progress.total > 0
+                      ? `${(progress.done / progress.total) * 100}%`
+                      : "8%",
+                }}
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted">
+              Не закрывайте страницу до конца импорта.
+            </p>
+          </div>
+        )}
 
         {importResult && (
           <div

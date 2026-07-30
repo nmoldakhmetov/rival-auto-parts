@@ -171,7 +171,6 @@ export async function POST(req: NextRequest) {
     client_name: me?.fullName ?? "",
     client_phone: me?.phone ?? "",
     comment: buildOneCComment({
-      orderNo,
       pickup: deliveryMethod === "PICKUP",
       city: me?.city,
       address: me?.address,

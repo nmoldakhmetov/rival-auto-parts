@@ -25,9 +25,13 @@ export type OneCOrderResult = {
 
 // 1С order comment.
 //
-//   самовывоз → "Заказ с сайта №K1-2085. Самовывоз"
-//   доставка  → "Заказ с сайта №K1-2085. Доставка, Адрес: Казахстан, Алматы,
-//                Жибек жолы 11 (комментарий клиента)"
+//   самовывоз → "Самовывоз"
+//   доставка  → "Доставка, Адрес: Казахстан, Алматы, Жибек жолы 11
+//                (комментарий клиента)"
+//
+// ⚠ БЕЗ префикса «Заказ с сайта №…»: 1С подставляет его сама из
+// site_order_id. Когда мы добавляли его тоже, в документе получалось
+// «Заказ с сайта №0D390O. Заказ с сайта №0D390O. Доставка, …».
 //
 // The delivery address is composed from the client card: населённый пункт +
 // адрес. Empty parts are dropped, so the string never carries dangling commas
@@ -35,7 +39,6 @@ export type OneCOrderResult = {
 const clean = (s?: string | null) => (s ?? "").replace(/\s+/g, " ").trim();
 
 export function buildOneCComment(opts: {
-  orderNo: string;
   pickup: boolean;
   city?: string | null;
   address?: string | null;
@@ -53,10 +56,7 @@ export function buildOneCComment(opts: {
   }
   const note = clean(opts.comment);
   if (note) parts.push(note);
-
-  const orderNo = clean(opts.orderNo);
-  const head = orderNo ? `Заказ с сайта №${orderNo}.` : "Заказ с сайта.";
-  return `${head} ${parts.join(" ")}`.trim();
+  return parts.join(" ");
 }
 
 function ordersUrl(): string | null {

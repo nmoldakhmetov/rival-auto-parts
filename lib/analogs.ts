@@ -1,6 +1,11 @@
 import "server-only";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
+import {
+  normalizeCode as normCode,
+  parseAnalogRows,
+  type AnalogRecord,
+} from "@/lib/analog-parse";
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Analog cross-reference: a big .xlsx (200k+ rows) maps an "analog number"
@@ -8,18 +13,9 @@ import { prisma } from "@/lib/prisma";
 //  (col 3, sku) that should be shown. Importing resets the whole table.
 // ─────────────────────────────────────────────────────────────────────────
 
-// Drop separators (spaces, dashes, dots, slashes, brackets) so "zeekr 9x",
-// "zeekr9x", "zeekr-9x" and "zeekr 9 x" all collapse to the same key.
-const SEP = /[\s\-_./()[\]]+/g;
-
-export function normalizeCode(s: string): string {
-  return s.trim().toUpperCase().replace(SEP, "");
-}
-
-// Lowercase variant used for Product.skuNorm / fullNameNorm matching.
-export function normalizeSmart(s: string): string {
-  return s.trim().toLowerCase().replace(SEP, "");
-}
+// The normalizers and the row parser live in lib/analog-parse.ts so the
+// browser can reuse them when it parses the .xlsx before upload.
+export { normalizeCode, normalizeSmart } from "@/lib/analog-parse";
 
 export type ImportResult = {
   ok: boolean;
@@ -28,6 +24,42 @@ export type ImportResult = {
   durationMs: number;
   error?: string;
 };
+
+// Writes parsed records in batches. Used by both the legacy whole-file upload
+// and the chunked client-side import.
+export async function insertAnalogRecords(
+  records: AnalogRecord[]
+): Promise<number> {
+  const BATCH = 5000;
+  let imported = 0;
+  for (let i = 0; i < records.length; i += BATCH) {
+    const res = await prisma.analog.createMany({
+      data: records.slice(i, i + BATCH),
+    });
+    imported += res.count;
+  }
+  return imported;
+}
+
+export async function resetAnalogs(): Promise<void> {
+  await prisma.analog.deleteMany({});
+}
+
+// Normalizes and validates one chunk coming from the browser.
+export function sanitizeAnalogChunk(input: unknown): AnalogRecord[] {
+  if (!Array.isArray(input)) return [];
+  const out: AnalogRecord[] = [];
+  for (const raw of input) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const code = normCode(String(r.code ?? ""));
+    const sku = String(r.sku ?? "").trim();
+    if (!code || !sku) continue;
+    const brand = String(r.brand ?? "").trim();
+    out.push({ code, brand: brand || null, sku });
+  }
+  return out;
+}
 
 export async function importAnalogsFromBuffer(buf: Buffer): Promise<ImportResult> {
   const started = Date.now();
@@ -43,39 +75,11 @@ export async function importAnalogsFromBuffer(buf: Buffer): Promise<ImportResult
       blankrows: false,
     }) as unknown[][];
 
-    const records: { code: string; brand: string | null; sku: string }[] = [];
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      if (!Array.isArray(r)) continue;
-      const codeRaw = String(r[0] ?? "").trim();
-      const brandRaw = String(r[1] ?? "").trim();
-      const skuRaw = String(r[2] ?? "").trim();
-      if (!codeRaw || !skuRaw) continue;
-      // Skip a header row if the first line looks like column titles.
-      if (
-        i === 0 &&
-        /^(код|code|артикул|sku|номер)$/i.test(codeRaw) &&
-        /^(артикул|sku|article|код)$/i.test(skuRaw)
-      ) {
-        continue;
-      }
-      records.push({
-        code: normalizeCode(codeRaw),
-        brand: brandRaw || null,
-        sku: skuRaw,
-      });
-    }
+    const records = parseAnalogRows(rows);
 
     // Full reset, then rebuild from the new file.
     await prisma.analog.deleteMany({});
-
-    const BATCH = 5000;
-    let imported = 0;
-    for (let i = 0; i < records.length; i += BATCH) {
-      const chunk = records.slice(i, i + BATCH);
-      const res = await prisma.analog.createMany({ data: chunk });
-      imported += res.count;
-    }
+    const imported = await insertAnalogRecords(records);
 
     return {
       ok: true,
@@ -98,7 +102,7 @@ export type AnalogMatch = { sku: string; brand: string | null; code: string };
 
 /** Resolve a typed query to the catalog articles it cross-references. */
 export async function findAnalogMatches(query: string): Promise<AnalogMatch[]> {
-  const code = normalizeCode(query);
+  const code = normCode(query);
   if (!code) return [];
   return prisma.analog.findMany({
     where: { code },
