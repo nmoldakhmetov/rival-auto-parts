@@ -205,6 +205,87 @@ function ProductImage({
   );
 }
 
+// Обрезанный текст (применяемость) с всплывающей подсказкой на полный текст.
+// Наведение — для мыши, нажатие — для телефона, где hover не существует.
+// Подсказка position:fixed: в списке ячейка лежит внутри таблицы с
+// overflow-x-auto, и absolute-подсказку там просто обрезало бы.
+function ClampedText({
+  text,
+  lines,
+  className,
+}: {
+  text: string;
+  lines: 1 | 2;
+  className?: string;
+}) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(
+    null
+  );
+
+  const open = () => {
+    const el = ref.current;
+    if (!el) return;
+    // Показываем только если текст действительно не поместился.
+    if (el.scrollHeight <= el.clientHeight + 1) return;
+    const r = el.getBoundingClientRect();
+    const width = Math.min(320, Math.max(220, r.width));
+    let left = r.left;
+    if (left + width > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - width - 8);
+    }
+    setPos({ top: r.bottom + 6, left, width });
+  };
+  const close = () => setPos(null);
+
+  useEffect(() => {
+    if (!pos) return;
+    // Клик по самому тексту не всплывает (stopPropagation), поэтому эти
+    // слушатели ловят только «нажатие мимо».
+    const onAway = () => close();
+    window.addEventListener("scroll", onAway, true);
+    window.addEventListener("resize", onAway);
+    document.addEventListener("touchstart", onAway);
+    document.addEventListener("click", onAway);
+    return () => {
+      window.removeEventListener("scroll", onAway, true);
+      window.removeEventListener("resize", onAway);
+      document.removeEventListener("touchstart", onAway);
+      document.removeEventListener("click", onAway);
+    };
+  }, [pos]);
+
+  return (
+    <>
+      <p
+        ref={ref}
+        onMouseEnter={open}
+        onMouseLeave={close}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (pos) close();
+          else open();
+        }}
+        className={cx(
+          "cursor-help",
+          lines === 1 ? "line-clamp-1" : "line-clamp-2",
+          className
+        )}
+      >
+        {text}
+      </p>
+      {pos && (
+        <div
+          className="pointer-events-none fixed z-[70] rounded-lg bg-ink/95 p-2.5 text-[11px] leading-relaxed text-white shadow-xl ring-1 ring-white/10"
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
+        >
+          {text}
+        </div>
+      )}
+    </>
+  );
+}
+
 function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1049,24 +1130,24 @@ export default function Catalog({
                               скакала от одной строки до пяти. */}
                           <td className="align-top">
                             {role === "CLIENT" ? (
-                              <div
-                                title={row.fullName ?? undefined}
-                                className="line-clamp-2 font-medium text-ink"
-                              >
-                                {row.fullName || row.sku}
-                              </div>
+                              <ClampedText
+                                text={row.fullName || row.sku}
+                                lines={2}
+                                className="font-medium text-ink"
+                              />
                             ) : (
                               <>
-                                <div className="line-clamp-1 font-medium text-ink">
-                                  {row.name}
-                                </div>
+                                <ClampedText
+                                  text={row.name}
+                                  lines={1}
+                                  className="font-medium text-ink"
+                                />
                                 {row.fullName && (
-                                  <div
-                                    title={row.fullName}
-                                    className="line-clamp-2 text-[11px] leading-snug text-muted"
-                                  >
-                                    {row.fullName}
-                                  </div>
+                                  <ClampedText
+                                    text={row.fullName}
+                                    lines={2}
+                                    className="text-[11px] leading-snug text-muted"
+                                  />
                                 )}
                               </>
                             )}
@@ -1292,15 +1373,12 @@ export default function Catalog({
                           )}
                         </div>
                         {desc && (
-                          <div className="group/desc relative mt-1">
-                            <p className="line-clamp-2 cursor-help text-[10px] leading-snug text-muted sm:text-xs">
-                              {desc}
-                            </p>
-                            {desc.length > 60 && (
-                              <div className="pointer-events-none absolute inset-x-0 top-full z-40 mt-1 hidden rounded-lg bg-ink/95 p-2.5 text-[11px] leading-relaxed text-white shadow-xl ring-1 ring-white/10 group-hover/desc:block">
-                                {desc}
-                              </div>
-                            )}
+                          <div className="mt-1">
+                            <ClampedText
+                              text={desc}
+                              lines={2}
+                              className="text-[10px] leading-snug text-muted sm:text-xs"
+                            />
                           </div>
                         )}
                         {row.viaAnalog && (
