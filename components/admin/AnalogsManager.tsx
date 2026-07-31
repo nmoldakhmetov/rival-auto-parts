@@ -224,11 +224,16 @@ export default function AnalogsManager({
           <h2 className="text-sm font-bold text-ink">Импорт из .xlsx</h2>
         </div>
 
-        <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        {/* Текст обязан быть ОДНИМ flex-элементом: иначе каждая строка и
+            каждый <b> становятся отдельными элементами flex-строки и на узком
+            экране разъезжаются по колонкам. */}
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
           <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-          Импорт <b>полностью очищает</b> базу аналогов и пересобирает её по
-          новому файлу. Используются первые 3 колонки: <b>код</b>, <b>бренд</b>,{" "}
-          <b>артикул</b>.
+          <span className="min-w-0">
+            Импорт <b>полностью очищает</b> базу аналогов и пересобирает её по
+            новому файлу. Используются первые 3 колонки: <b>код</b>,{" "}
+            <b>бренд</b>, <b>артикул</b>.
+          </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">

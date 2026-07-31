@@ -220,7 +220,10 @@ export default function Sidebar({
       <aside
         className={cx(
           // Mobile: fixed drawer sliding in from the left (always full width).
-          "fixed inset-y-0 left-0 z-[120] flex h-screen w-60 flex-col bg-sidebar text-white",
+          // h-[100dvh], а не h-screen: на iOS Safari 100vh больше видимой
+          // области (в неё входят панели браузера), из-за чего низ меню с
+          // кнопкой «Выйти» уезжал под нижнюю панель и был недостижим.
+          "fixed inset-y-0 left-0 z-[120] flex h-[100dvh] w-60 flex-col bg-sidebar text-white",
           transOn && "transition-all duration-300 ease-in-out",
           sidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full",
           // Desktop (lg+): always-visible column, collapsible to a mini rail.

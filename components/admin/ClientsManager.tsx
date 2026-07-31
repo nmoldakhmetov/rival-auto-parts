@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   UserPlus,
   ChevronDown,
@@ -15,6 +15,9 @@ import {
   Wallet,
   UserRound,
   Percent,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { formatTenge, formatDateTime } from "@/lib/format";
@@ -644,6 +647,74 @@ export default function ClientsManager({
   // Only ADMIN/RA may create staff (MANAGER/ACCOUNTANT/RA) and see the staff tabs.
   const isOwner = viewerRole === "ADMIN" || viewerRole === "RA";
 
+  // ─── Поиск, фильтры и страницы по клиентам ───────────────────────────────
+  // Клиентов сотни (на проде 650+), поэтому список фильтруется и режется на
+  // страницы прямо здесь: данные уже загружены, ходить на сервер незачем.
+  const [q, setQ] = useState("");
+  const [fCountry, setFCountry] = useState("");
+  const [fRegion, setFRegion] = useState("");
+  const [fCity, setFCity] = useState("");
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 25;
+
+  // «Казахстан, Алматинская область, Алматы» → страна / область / город.
+  // Старые записи содержат только город («Алматы») — тогда страна и область
+  // пустые, а городом считается последний сегмент.
+  const geoOf = (city: string | null) => {
+    const p = (city ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return {
+      country: p.length >= 2 ? p[0] : "",
+      region: p.length >= 3 ? p[1] : "",
+      city: p.length ? p[p.length - 1] : "",
+    };
+  };
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return clients.filter((c) => {
+      const g = geoOf(c.city);
+      if (fCountry && g.country !== fCountry) return false;
+      if (fRegion && g.region !== fRegion) return false;
+      if (fCity && g.city !== fCity) return false;
+      if (!needle) return true;
+      return [c.fullName, c.login, c.email, c.phone, c.city]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(needle));
+    });
+  }, [clients, q, fCountry, fRegion, fCity]);
+
+  // Варианты фильтров — из реальных данных, каскадом.
+  const geoOptions = useMemo(() => {
+    const countries = new Set<string>();
+    const regions = new Set<string>();
+    const cities = new Set<string>();
+    for (const c of clients) {
+      const g = geoOf(c.city);
+      if (g.country) countries.add(g.country);
+      if (g.region && (!fCountry || g.country === fCountry)) regions.add(g.region);
+      if (
+        g.city &&
+        (!fCountry || g.country === fCountry) &&
+        (!fRegion || g.region === fRegion)
+      ) {
+        cities.add(g.city);
+      }
+    }
+    const sort = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b, "ru"));
+    return { countries: sort(countries), regions: sort(regions), cities: sort(cities) };
+  }, [clients, fCountry, fRegion]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const filtersActive = !!(q || fCountry || fRegion || fCity);
+
+  // Смена фильтра возвращает на первую страницу, иначе можно «зависнуть»
+  // на несуществующей.
+  useEffect(() => {
+    setPage(1);
+  }, [q, fCountry, fRegion, fCity]);
+
   const staffByRole = (r: StaffRoleT) => staff.filter((s) => s.role === r);
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "CLIENT", label: "Клиенты", count: clients.length },
@@ -805,8 +876,91 @@ export default function ClientsManager({
           canEdit={isOwner}
         />
       ) : (
-      <div className="overflow-hidden rounded-lg border border-line bg-white">
-        <table className="data-table">
+      <>
+      {/* Поиск + фильтры по географии */}
+      <div className="mb-3 space-y-2">
+        <div className="relative">
+          <Search
+            size={15}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+          />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Поиск: ФИО, логин, телефон, почта, город…"
+            className="input pl-9"
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <select
+            value={fCountry}
+            onChange={(e) => {
+              setFCountry(e.target.value);
+              setFRegion("");
+              setFCity("");
+            }}
+            className="input py-1.5 text-xs"
+          >
+            <option value="">Все страны</option>
+            {geoOptions.countries.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <select
+            value={fRegion}
+            onChange={(e) => {
+              setFRegion(e.target.value);
+              setFCity("");
+            }}
+            className="input py-1.5 text-xs"
+          >
+            <option value="">Все области</option>
+            {geoOptions.regions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <select
+            value={fCity}
+            onChange={(e) => setFCity(e.target.value)}
+            className="input py-1.5 text-xs"
+          >
+            <option value="">Все города</option>
+            {geoOptions.cities.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+        {filtersActive && (
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted">
+              Найдено: <b className="text-ink">{filtered.length}</b> из{" "}
+              {clients.length}
+            </span>
+            <button
+              onClick={() => {
+                setQ("");
+                setFCountry("");
+                setFRegion("");
+                setFCity("");
+              }}
+              className="flex items-center gap-1 text-muted transition-colors hover:text-accent"
+            >
+              <X size={12} /> Сбросить
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* overflow-x-auto, а не overflow-hidden: на телефоне таблицу нужно
+          прокручивать вбок, иначе правые колонки недостижимы. */}
+      <div className="overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="data-table min-w-[900px]">
           <thead>
             <tr>
               <th>Клиент</th>
@@ -818,14 +972,16 @@ export default function ClientsManager({
             </tr>
           </thead>
           <tbody>
-            {clients.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="py-12 text-center text-sm text-muted">
-                  Клиентов пока нет.
+                  {clients.length === 0
+                    ? "Клиентов пока нет."
+                    : "Под фильтры никто не подошёл."}
                 </td>
               </tr>
             )}
-            {clients.map((c) => (
+            {pageRows.map((c) => (
               <Fragment key={c.id}>
                 <tr>
                   <td>
@@ -942,6 +1098,39 @@ export default function ClientsManager({
           </tbody>
         </table>
       </div>
+
+      {filtered.length > PER_PAGE && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="text-muted">
+            Показано{" "}
+            <b className="text-ink">
+              {(safePage - 1) * PER_PAGE + 1}–
+              {(safePage - 1) * PER_PAGE + pageRows.length}
+            </b>{" "}
+            из <b className="text-ink">{filtered.length}</b>
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              className="flex h-7 w-7 items-center justify-center rounded border border-line disabled:opacity-40"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span className="px-1 text-muted">
+              {safePage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              className="flex h-7 w-7 items-center justify-center rounded border border-line disabled:opacity-40"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+      </>
       )}
 
       {showCreate && canCreate && (

@@ -553,6 +553,65 @@ export default function Catalog({
   }
 
   const pageList = buildPageList(page, totalPages);
+
+  // Один и тот же переключатель страниц над списком и под ним.
+  function Pager({ position }: { position: "top" | "bottom" }) {
+    return (
+      <div
+        className={cx(
+          "flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-2 text-xs",
+          position === "top" ? "border-b border-line" : "border-t border-line"
+        )}
+      >
+        <span className="text-muted">
+          Показано{" "}
+          <span className="font-medium text-ink">
+            {total === 0 ? 0 : (page - 1) * pageSize + 1}–
+            {(page - 1) * pageSize + shown}
+          </span>{" "}
+          из <span className="font-medium text-ink">{total}</span>
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1}
+            title="Предыдущая страница"
+            className="flex h-7 min-w-[28px] items-center justify-center rounded border border-line px-1.5 text-ink hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white"
+          >
+            <ChevronLeft size={15} />
+          </button>
+          {pageList.map((p, i) =>
+            p === -1 ? (
+              <span key={`gap${i}`} className="px-1 text-muted">
+                …
+              </span>
+            ) : (
+              <button
+                key={p}
+                onClick={() => goToPage(p)}
+                className={cx(
+                  "h-7 min-w-[28px] rounded border px-1.5 text-xs font-medium",
+                  p === page
+                    ? "border-accent bg-accent text-white"
+                    : "border-line text-ink hover:bg-gray-50"
+                )}
+              >
+                {p}
+              </button>
+            )
+          )}
+          <button
+            onClick={() => goToPage(page + 1)}
+            disabled={page >= totalPages}
+            title="Следующая страница"
+            className="flex h-7 min-w-[28px] items-center justify-center rounded border border-line px-1.5 text-ink hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white"
+          >
+            <ChevronRight size={15} />
+          </button>
+        </div>
+      </div>
+    );
+  }
   const showActions = role === "CLIENT";
   const showAdminControls = canEditCatalog(role);
   const hasFilters = !!(
@@ -864,6 +923,9 @@ export default function Catalog({
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {/* Refreshing existing results: thin bar + slight dim, no blanking */}
           {loading && rows.length > 0 && <div className="loading-bar" />}
+          {/* Пагинация сверху тоже: на телефоне до нижней пришлось бы
+              пролистать все 50 карточек, и казалось, что страниц нет вовсе. */}
+          {total > 0 && !loading && <Pager position="top" />}
           <div
             ref={scrollRef}
             className={cx(
@@ -1318,54 +1380,7 @@ export default function Catalog({
             )}
           </div>
 
-          {total > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-white px-4 py-2 text-xs">
-              <span className="text-muted">
-                Показано{" "}
-                <span className="font-medium text-ink">
-                  {total === 0 ? 0 : (page - 1) * pageSize + 1}–
-                  {(page - 1) * pageSize + shown}
-                </span>{" "}
-                из <span className="font-medium text-ink">{total}</span>
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => goToPage(page - 1)}
-                  disabled={page <= 1}
-                  className="flex h-7 min-w-[28px] items-center justify-center rounded border border-line px-1.5 text-ink hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white"
-                >
-                  <ChevronLeft size={15} />
-                </button>
-                {pageList.map((p, i) =>
-                  p === -1 ? (
-                    <span key={`gap${i}`} className="px-1 text-muted">
-                      …
-                    </span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => goToPage(p)}
-                      className={cx(
-                        "h-7 min-w-[28px] rounded border px-1.5 text-xs font-medium",
-                        p === page
-                          ? "border-accent bg-accent text-white"
-                          : "border-line text-ink hover:bg-gray-50"
-                      )}
-                    >
-                      {p}
-                    </button>
-                  )
-                )}
-                <button
-                  onClick={() => goToPage(page + 1)}
-                  disabled={page >= totalPages}
-                  className="flex h-7 min-w-[28px] items-center justify-center rounded border border-line px-1.5 text-ink hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white"
-                >
-                  <ChevronRight size={15} />
-                </button>
-              </div>
-            </div>
-          )}
+          {total > 0 && <Pager position="bottom" />}
         </div>
       </div>
 
