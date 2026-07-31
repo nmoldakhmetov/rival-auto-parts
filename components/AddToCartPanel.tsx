@@ -75,6 +75,9 @@ export default function AddToCartPanel({
     }, 1600);
   }
 
+  // Подпись у кнопки прячется на узких экранах: на телефоне «В корзину»
+  // занимало половину карточки, иконки достаточно.
+  const label = added ? "Добавлено" : "В корзину";
   const button = (
     <button
       onClick={commit}
@@ -85,16 +88,10 @@ export default function AddToCartPanel({
           : `btn-accent h-9 whitespace-nowrap transition-all duration-200 ${row ? "shrink-0 px-3" : "mt-2 w-full"}`
       }
     >
-      {added ? (
-        <>
-          <Check size={16} /> {row ? "" : "Добавлено"}
-        </>
-      ) : (
-        <>
-          <ShoppingCart size={16} /> {row ? "" : "В корзину"}
-        </>
-      )}
-      {row && <span className="hidden text-[11px] xl:inline">В корзину</span>}
+      {added ? <Check size={16} /> : <ShoppingCart size={16} />}
+      <span className={row ? "hidden text-[11px] xl:inline" : "hidden sm:inline"}>
+        {label}
+      </span>
     </button>
   );
 

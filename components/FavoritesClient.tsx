@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Heart, ImageOff } from "lucide-react";
+import { Heart } from "lucide-react";
 import { useCart } from "@/store/cart";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
@@ -21,8 +21,14 @@ function ProductThumb({ src, alt }: { src: string | null; alt: string }) {
   const [broken, setBroken] = useState(false);
   if (!src || broken) {
     return (
-      <div className="flex h-11 w-11 items-center justify-center rounded border border-line bg-gray-50">
-        <ImageOff size={16} className="text-gray-300" />
+      <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded border border-line bg-white">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/no-photo.png"
+          alt="Фото товара пока нет"
+          loading="lazy"
+          className="max-h-full max-w-full object-contain"
+        />
       </div>
     );
   }
@@ -349,7 +355,13 @@ export default function FavoritesClient({ role }: { role: Role }) {
                       className="max-h-full max-w-full object-contain"
                     />
                   ) : (
-                    <ImageOff size={30} className="text-gray-300" />
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src="/no-photo.png"
+                      alt="Фото товара пока нет"
+                      loading="lazy"
+                      className="max-h-full max-w-full object-contain"
+                    />
                   )}
                   <button
                     onClick={() => removeFavorite(row.id)}

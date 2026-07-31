@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  ImageOff,
   Loader2,
   PackageSearch,
   TriangleAlert,
@@ -156,15 +155,22 @@ function ProductImage({
   const [broken, setBroken] = useState(false);
   const proxied = src ? `/api/image?u=${encodeURIComponent(src)}` : null;
 
+  // Нет фото (или ссылка битая) → фирменная заглушка вместо пустой иконки.
   if (!proxied || broken) {
     return (
       <div
         className={cx(
-          "flex items-center justify-center rounded border border-line bg-gray-50 text-gray-300",
+          "flex items-center justify-center overflow-hidden rounded border border-line bg-white",
           size === "card" ? "h-full w-full" : "h-11 w-11"
         )}
       >
-        <ImageOff size={size === "card" ? 30 : 16} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/no-photo.png"
+          alt="Фото товара пока нет"
+          loading="lazy"
+          className="max-h-full max-w-full object-contain"
+        />
       </div>
     );
   }
@@ -965,16 +971,18 @@ export default function Catalog({
             ) : view === "list" ? (
               /* ─── List (table) view (scrolls horizontally on phones) ── */
               <div className="overflow-x-auto rounded-lg border border-line bg-white">
-                <table className="data-table min-w-[1040px]">
+                {/* На телефоне таблица уже: категория скрыта, кнопка в
+                    действиях без подписи — иначе вправо ехать слишком долго. */}
+                <table className="data-table min-w-[680px] sm:min-w-[1040px]">
                   <thead className="sticky top-0 z-10">
                     <tr>
                       <th className="w-14">Фото</th>
-                      <th className="w-40">Артикул</th>
-                      <th className="w-36">Категория</th>
+                      <th className="w-32 sm:w-40">Артикул</th>
+                      <th className="hidden w-36 sm:table-cell">Категория</th>
                       <th>Применяемость</th>
-                      <th className="w-60">Наличие</th>
-                      <th className="w-28 text-right">Цена</th>
-                      {showActions && <th className="w-72"></th>}
+                      <th className="w-40 sm:w-60">Наличие</th>
+                      <th className="w-24 text-right sm:w-28">Цена</th>
+                      {showActions && <th className="w-44 sm:w-72"></th>}
                       {showAdminControls && (
                         <th className="w-48">Управление</th>
                       )}
@@ -992,11 +1000,15 @@ export default function Catalog({
                       return (
                         <tr
                           key={row.id}
-                          className={
-                            row.exactMatch
-                              ? "bg-accent/5 shadow-[inset_3px_0_0_0_#E53935]"
-                              : undefined
-                          }
+                          // Единая высота строки: раньше она зависела от длины
+                          // применяемости и числа складских плашек, и список
+                          // выглядел рваным. Высоты хватает на 2 строки текста
+                          // и 2 плашки склада.
+                          className={cx(
+                            "h-[92px] sm:h-auto",
+                            row.exactMatch &&
+                              "bg-accent/5 shadow-[inset_3px_0_0_0_#E53935]"
+                          )}
                         >
                           <td>
                             <ProductImage
@@ -1020,7 +1032,7 @@ export default function Catalog({
                               </div>
                             )}
                           </td>
-                          <td>
+                          <td className="hidden sm:table-cell">
                             {visibleCategory(row.category) ? (
                               <span
                                 title={row.category ?? undefined}
@@ -1032,18 +1044,27 @@ export default function Catalog({
                               <span className="text-muted">—</span>
                             )}
                           </td>
-                          <td>
+                          {/* line-clamp: без него строка растягивалась под
+                              длину применяемости и высота карточек в списке
+                              скакала от одной строки до пяти. */}
+                          <td className="align-top">
                             {role === "CLIENT" ? (
-                              <div className="font-medium text-ink">
+                              <div
+                                title={row.fullName ?? undefined}
+                                className="line-clamp-2 font-medium text-ink"
+                              >
                                 {row.fullName || row.sku}
                               </div>
                             ) : (
                               <>
-                                <div className="font-medium text-ink">
+                                <div className="line-clamp-1 font-medium text-ink">
                                   {row.name}
                                 </div>
                                 {row.fullName && (
-                                  <div className="text-[11px] leading-snug text-muted">
+                                  <div
+                                    title={row.fullName}
+                                    className="line-clamp-2 text-[11px] leading-snug text-muted"
+                                  >
                                     {row.fullName}
                                   </div>
                                 )}
@@ -1063,8 +1084,13 @@ export default function Catalog({
                             )}
                             <GiftBanner row={row} compact />
                           </td>
-                          <td>
-                            <StockBadges stocks={row.stocks} tooltip={whTooltip} />
+                          <td className="align-top">
+                            <div className="max-h-[52px] overflow-hidden sm:max-h-none">
+                              <StockBadges
+                                stocks={row.stocks}
+                                tooltip={whTooltip}
+                              />
+                            </div>
                           </td>
                           <td className="text-right font-semibold text-ink">
                             {row.price > 0 ? (
@@ -1185,7 +1211,9 @@ export default function Catalog({
               </div>
             ) : (
               /* ─── Grid (cards) view ─────────────────────────────── */
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+              // На телефоне 2 колонки: одна давала карточки во весь экран, и
+              // за раз было видно от силы полторы позиции.
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
                 {rows.map((row, i) => {
                   const qtyInCart = cartQtyById.get(row.id) ?? 0;
                   const pct = row.discountPct;
@@ -1209,7 +1237,7 @@ export default function Catalog({
                           : "border-line shadow-sm"
                       )}
                     >
-                      <div className="relative flex h-44 items-center justify-center overflow-hidden rounded-t-xl border-b border-line bg-gray-50 p-3">
+                      <div className="relative flex h-28 items-center justify-center overflow-hidden rounded-t-xl border-b border-line bg-gray-50 p-2 sm:h-44 sm:p-3">
                         <ProductImage
                           src={row.imageUrl}
                           alt={row.sku}
@@ -1245,18 +1273,19 @@ export default function Catalog({
                         )}
                       </div>
 
-                      <div className="flex flex-1 flex-col p-4">
+                      <div className="flex flex-1 flex-col p-2.5 sm:p-4">
                         <div className="flex items-start justify-between gap-2">
                           <span
                             title={row.sku}
-                            className="min-w-0 truncate font-bold text-ink"
+                            className="min-w-0 truncate text-sm font-bold text-ink sm:text-base"
                           >
                             {row.sku}
                           </span>
+                          {/* Категория на телефоне только мешает — места нет. */}
                           {visibleCategory(row.category) && (
                             <span
                               title={row.category ?? undefined}
-                              className="max-w-[55%] truncate rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-muted"
+                              className="hidden max-w-[55%] truncate rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-muted sm:inline"
                             >
                               {visibleCategory(row.category)}
                             </span>
@@ -1264,7 +1293,7 @@ export default function Catalog({
                         </div>
                         {desc && (
                           <div className="group/desc relative mt-1">
-                            <p className="line-clamp-2 cursor-help text-xs leading-snug text-muted">
+                            <p className="line-clamp-2 cursor-help text-[10px] leading-snug text-muted sm:text-xs">
                               {desc}
                             </p>
                             {desc.length > 60 && (
@@ -1287,15 +1316,15 @@ export default function Catalog({
 
                         <GiftBanner row={row} />
 
-                        <div className="mt-auto pt-3">
+                        <div className="mt-auto pt-2 sm:pt-3">
                           {row.price > 0 ? (
-                            <div className="mb-2.5">
+                            <div className="mb-2 sm:mb-2.5">
                               {pct > 0 && oldP != null && (
-                                <div className="mb-0.5 flex items-center gap-2">
-                                  <span className="text-base font-medium text-gray-400 line-through">
+                                <div className="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <span className="text-xs font-medium text-gray-400 line-through sm:text-base">
                                     {formatTenge(oldP * selQty)}
                                   </span>
-                                  <span className="whitespace-nowrap rounded-full bg-accent px-2 py-1 text-xs font-bold leading-none text-white">
+                                  <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white sm:px-2 sm:py-1 sm:text-xs">
                                     {formatDiscount(
                                       discountDisplay,
                                       pct,
@@ -1305,21 +1334,21 @@ export default function Catalog({
                                   </span>
                                 </div>
                               )}
-                              <div className="text-xl font-extrabold text-ink">
+                              <div className="text-base font-extrabold text-ink sm:text-xl">
                                 {formatTenge(row.price * selQty)}
                                 {pair ? (
-                                  <span className="ml-1.5 text-xs font-semibold text-muted">
+                                  <span className="ml-1 text-[10px] font-semibold text-muted sm:ml-1.5 sm:text-xs">
                                     цена за {selQty}шт
                                   </span>
                                 ) : selQty > 1 ? (
-                                  <span className="ml-1.5 text-xs font-semibold text-muted">
+                                  <span className="ml-1 text-[10px] font-semibold text-muted sm:ml-1.5 sm:text-xs">
                                     за {selQty} шт
                                   </span>
                                 ) : null}
                               </div>
                             </div>
                           ) : (
-                            <div className="mb-2.5 text-sm font-semibold text-muted">
+                            <div className="mb-2 text-xs font-semibold text-muted sm:mb-2.5 sm:text-sm">
                               Цена по запросу
                             </div>
                           )}
