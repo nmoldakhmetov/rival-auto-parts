@@ -78,6 +78,10 @@ model User {
   fullName     String // ФИО / название организации
   email        String? @unique
   phone        String? // for managers this is the WhatsApp number
+  // Числовой Telegram-ID менеджера (chat_id): бот шлёт сюда новые заказы его
+  // клиентов. Узнаётся через @userinfobot; менеджер обязан сам нажать /start
+  // у бота, иначе Telegram запрещает боту писать первым.
+  telegramId   String?
   address      String?
   city         String? // населённый пункт
   balance      Decimal @default(0) @db.Decimal(12, 2) // баланс (долг отражается отрицательным)

@@ -9,6 +9,7 @@ import { getActiveGiftRules } from "@/lib/gifts";
 import { earnedGiftQty } from "@/lib/gift-earn";
 import { isPairOnly, snapPairQty } from "@/lib/pair-only";
 import { sendOrderMail } from "@/lib/mail";
+import { sendOrderTelegram } from "@/lib/telegram";
 import {
   isPaymentMethod,
   isDeliveryMethod,
@@ -282,6 +283,47 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Telegram-уведомление менеджеру — тоже best-effort и с логом причины.
+  const mailItems = orderItems.map((i) => ({
+    sku: i.sku,
+    name: i.name,
+    qty: i.qty,
+    price: i.price,
+    isGift: i.isGift,
+    warehouses: whByProduct.get(i.productId) ?? [],
+  }));
+  const tg = await sendOrderTelegram(
+    {
+      orderNo,
+      total,
+      paymentMethod,
+      deliveryMethod,
+      comment: body.comment?.trim() || null,
+      client: {
+        fullName: me?.fullName ?? "",
+        login: me?.login ?? "",
+        email: me?.email ?? null,
+        phone: me?.phone ?? null,
+        city: me?.city ?? null,
+        address: me?.address ?? null,
+      },
+      manager: manager
+        ? { fullName: manager.fullName, telegramId: manager.telegramId }
+        : null,
+    },
+    mailItems
+  ).catch((e) => ({ ok: false, error: String(e) }));
+
+  if (tg.ok) {
+    console.log(
+      `[telegram] Заказ №${orderNo}: отправлено менеджеру «${manager?.fullName ?? "—"}»`
+    );
+  } else {
+    console.warn(
+      `[telegram] Заказ №${orderNo}: НЕ отправлено — ${tg.error ?? "причина неизвестна"}`
+    );
+  }
+
   return NextResponse.json({
     ok: true,
     orderId: order.id,
@@ -290,6 +332,7 @@ export async function POST(req: NextRequest) {
     waLink,
     onecSent: onec.ok,
     mailSent: mail.ok,
+    telegramSent: tg.ok,
     manager: manager
       ? { fullName: manager.fullName, phone: manager.phone }
       : null,

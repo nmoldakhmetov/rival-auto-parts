@@ -21,6 +21,7 @@ export async function PATCH(
     email?: string;
     phone?: string;
     address?: string;
+    telegramId?: string;
   };
   try {
     body = await req.json();
@@ -40,6 +41,17 @@ export async function PATCH(
   if ("address" in body) data.address = String(body.address ?? "").trim() || null;
   if ("email" in body) data.email = String(body.email ?? "").trim() || null;
   if ("phone" in body) data.phone = String(body.phone ?? "").trim() || null;
+  if ("telegramId" in body) {
+    // Telegram chat_id — только цифры (у пользователей положительные).
+    const raw = String(body.telegramId ?? "").trim();
+    if (raw && !/^-?\d+$/.test(raw)) {
+      return NextResponse.json(
+        { error: "Telegram ID — это число, например 123456789 (узнать: @userinfobot)" },
+        { status: 400 }
+      );
+    }
+    data.telegramId = raw || null;
+  }
   // ФИО и логин обязательны — пустыми их затирать нельзя.
   if ("fullName" in body) {
     const v = String(body.fullName ?? "").trim();

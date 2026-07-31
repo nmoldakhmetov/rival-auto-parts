@@ -47,6 +47,7 @@ type StaffRow = {
   fullName: string;
   email: string | null;
   phone: string | null;
+  telegramId: string | null;
   role: StaffRoleT;
   isActive: boolean;
   createdAt: string;
@@ -457,7 +458,21 @@ function StaffTable({
               <td className="text-[11px] text-muted">
                 {s.email && <div>{s.email}</div>}
                 {s.phone && <div>{s.phone}</div>}
-                {!s.email && !s.phone && <span>—</span>}
+                {s.role === "MANAGER" && (
+                  <div
+                    className={
+                      s.telegramId ? "text-ink" : "font-medium text-amber-700"
+                    }
+                    title={
+                      s.telegramId
+                        ? "Telegram ID для уведомлений о заказах"
+                        : "Без Telegram ID бот не сможет прислать заказы этого менеджера"
+                    }
+                  >
+                    TG: {s.telegramId || "не заполнен"}
+                  </div>
+                )}
+                {!s.email && !s.phone && s.role !== "MANAGER" && <span>—</span>}
               </td>
               <td>
                 <span className="badge border border-line bg-gray-50 text-ink">
@@ -535,6 +550,7 @@ function StaffEditor({
   const [login, setLogin] = useState(member.login);
   const [email, setEmail] = useState(member.email ?? "");
   const [phone, setPhone] = useState(member.phone ?? "");
+  const [telegramId, setTelegramId] = useState(member.telegramId ?? "");
   const field = (
     label: string,
     value: string,
@@ -569,10 +585,23 @@ function StaffEditor({
             ? "На этот адрес приходят уведомления о заказах его клиентов"
             : undefined
         )}
+        {member.role === "MANAGER" &&
+          field(
+            "Telegram ID",
+            telegramId,
+            setTelegramId,
+            "Числовой ID (узнать: @userinfobot). Менеджер должен нажать «Start» у бота, иначе Telegram не даст боту написать первым."
+          )}
       </div>
       <div className="flex gap-2">
         <button
-          onClick={() => onSave({ fullName, login, email, phone })}
+          onClick={() =>
+            onSave(
+              member.role === "MANAGER"
+                ? { fullName, login, email, phone, telegramId }
+                : { fullName, login, email, phone }
+            )
+          }
           className="btn-accent px-3 py-1.5 text-xs"
         >
           <Save size={14} /> Сохранить
@@ -700,6 +729,8 @@ export default function ClientsManager({
           fullName: user.fullName,
           email: user.email,
           phone: user.phone,
+          // Заполняется отдельно через «Изменить» — при создании его не спрашиваем.
+          telegramId: null,
           role,
           isActive: user.isActive,
           createdAt: user.createdAt,
