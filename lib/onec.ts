@@ -351,10 +351,23 @@ export async function syncFromOneC(): Promise<SyncResult> {
     );
 
     // Auto-"новинка": products first seen in 1С wear the NEW badge for N days.
+    //
+    // ⚠ Кроме ПЕРВОГО импорта: на пустом каталоге новыми оказываются сразу все
+    // товары, и значок «Новинка» повисает на всей витрине (именно так и вышло
+    // при запуске). Первый импорт — это перенос существующего ассортимента, а
+    // не поступление новинок.
     const now = new Date();
     const newDays = parseInt(await getSetting("new_badge_days"), 10) || 0;
+    const isInitialImport = (await prisma.product.count()) === 0;
     const newUntil =
-      newDays > 0 ? new Date(now.getTime() + newDays * 86_400_000) : null;
+      newDays > 0 && !isInitialImport
+        ? new Date(now.getTime() + newDays * 86_400_000)
+        : null;
+    if (isInitialImport) {
+      console.log(
+        "[sync] Первый импорт каталога — значок «Новинка» товарам не ставится."
+      );
+    }
 
     // 2) Upsert products (+ stocks) in bounded-concurrency chunks.
     const CHUNK = 25;
