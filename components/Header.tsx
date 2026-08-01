@@ -120,6 +120,9 @@ export default function Header({ manager }: { manager?: Manager | null }) {
   // Enter в поле и «лупа» рядом делают одно и то же.
   function runSearch() {
     const q = query.trim();
+    // Снять фокус ДО навигации: на телефоне (особенно в PWA с домашнего
+    // экрана) иначе остаётся висеть клавиатура поверх результатов.
+    searchRef.current?.blur();
     if (q) addSearchHistory(q); // commits the query into the history
     if (pathname === "/catalog") return; // the catalog searches live as you type
     // Carry the query in the URL so the route change doesn't reset it (see
