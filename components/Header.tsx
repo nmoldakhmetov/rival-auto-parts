@@ -147,12 +147,9 @@ export default function Header({ manager }: { manager?: Manager | null }) {
         <Menu size={19} />
       </button>
 
-      {/* Global search */}
+      {/* Global search. Кнопка-лупа живёт ВНУТРИ поля у правого края (как у
+          Ozon/Amazon) — одинаково на телефоне, десктопе и в PWA. */}
       <form onSubmit={onSubmit} className="relative w-full max-w-2xl">
-        <Search
-          size={18}
-          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
-        />
         <input
           ref={searchRef}
           value={query}
@@ -163,11 +160,33 @@ export default function Header({ manager }: { manager?: Manager | null }) {
           }}
           onBlur={() => setSearchFocused(false)}
           placeholder="Поиск по артикулу, марке или применяемости…"
-          className="w-full rounded-lg border border-line bg-gray-50 py-2.5 pl-11 pr-10 text-sm outline-none transition-all duration-200 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20"
+          className="w-full rounded-lg border border-line bg-gray-50 py-2.5 pl-4 pr-12 text-sm outline-none transition-all duration-200 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20"
         />
-        <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-line bg-white px-1.5 py-0.5 text-[10px] font-semibold text-muted sm:block">
-          /
-        </kbd>
+        {/* Подсказка хоткея видна только в пустом поле — набранный текст
+            никогда не заезжает под неё, и паддинг не зависит от брейкпоинта. */}
+        {query.trim() === "" && (
+          <kbd className="pointer-events-none absolute right-14 top-1/2 hidden -translate-y-1/2 rounded border border-line bg-white px-1.5 py-0.5 text-[10px] font-semibold text-muted sm:block">
+            /
+          </kbd>
+        )}
+        {/* Набранный запрос запускает поиск, как Enter; пустой — фокусирует
+            поле (на телефоне поднимает клавиатуру и историю запросов). */}
+        <button
+          type="button"
+          title="Поиск"
+          aria-label="Найти"
+          onClick={() => {
+            if (query.trim()) {
+              runSearch();
+            } else {
+              searchRef.current?.focus();
+              searchRef.current?.select();
+            }
+          }}
+          className="absolute inset-y-1 right-1 flex w-10 items-center justify-center rounded-md bg-accent text-white shadow-sm transition-all duration-200 hover:bg-accent/90 active:scale-95"
+        >
+          <Search size={17} />
+        </button>
 
         {/* Recent searches dropdown. onMouseDown-preventDefault keeps the
             input focused, so the click lands before blur closes the list. */}
@@ -205,26 +224,6 @@ export default function Header({ manager }: { manager?: Manager | null }) {
           </div>
         )}
       </form>
-
-      {/* «Лупа» вплотную к строке поиска (все разрешения): набранный запрос
-          запускает поиск, как Enter; пустой — фокусирует поле, поднимая
-          клавиатуру и выпадашку недавних запросов. */}
-      <button
-        type="button"
-        title="Поиск"
-        aria-label="Открыть поиск"
-        onClick={() => {
-          if (query.trim()) {
-            runSearch();
-          } else {
-            searchRef.current?.focus();
-            searchRef.current?.select();
-          }
-        }}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink transition-all duration-200 hover:border-accent/40 hover:text-accent"
-      >
-        <Search size={18} />
-      </button>
 
       <div className="ml-auto flex items-center gap-2">
         {/* Broadcasts / promos (clients only — self-hides otherwise) */}
