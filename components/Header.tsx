@@ -207,7 +207,23 @@ export default function Header({ manager }: { manager?: Manager | null }) {
         {/* Broadcasts / promos (clients only — self-hides otherwise) */}
         <BroadcastBell />
 
-        {/* WhatsApp — the client's manager when assigned, else the dept line */}
+        {/* Мобильная «лупа» вместо WhatsApp: фокусирует глобальный поиск —
+            поднимается клавиатура и выпадашка недавних запросов. */}
+        <button
+          type="button"
+          title="Поиск"
+          aria-label="Открыть поиск"
+          onClick={() => {
+            searchRef.current?.focus();
+            searchRef.current?.select();
+          }}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink transition-all duration-200 hover:border-accent/40 hover:text-accent sm:hidden"
+        >
+          <Search size={18} />
+        </button>
+
+        {/* WhatsApp — только на десктопе (на мобильном его место занимает
+            поиск). Пишет менеджеру клиента, иначе — на номер отдела. */}
         <a
           href={`https://wa.me/${waNumber}`}
           target="_blank"
@@ -217,7 +233,7 @@ export default function Header({ manager }: { manager?: Manager | null }) {
               ? `Написать менеджеру (${manager.fullName}) в WhatsApp`
               : "Написать в WhatsApp"
           }
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#25D366]/10 text-[#1FAF53] transition-all duration-200 hover:bg-[#25D366] hover:text-white hover:shadow-md"
+          className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#25D366]/10 text-[#1FAF53] transition-all duration-200 hover:bg-[#25D366] hover:text-white hover:shadow-md sm:flex"
         >
           <MessageCircle size={18} />
         </a>
