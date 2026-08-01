@@ -21,6 +21,10 @@ export type SyncResult = {
   stocksUpserted: number;
   // Строки остатков, удалённые как исчезнувшие из выгрузки 1С.
   stocksRemoved: number;
+  // Товары, удалённые как пропавшие из выгрузки 1С.
+  productsRemoved: number;
+  // Заполняется, если удаление пропущено из-за подозрительно малой выгрузки.
+  removalSkipped?: string;
   durationMs: number;
   error?: string;
 };
@@ -298,6 +302,7 @@ export async function syncFromOneC(): Promise<SyncResult> {
     warehousesUpserted: 0,
     stocksUpserted: 0,
     stocksRemoved: 0,
+    productsRemoved: 0,
     durationMs: 0,
   };
 
@@ -467,6 +472,48 @@ export async function syncFromOneC(): Promise<SyncResult> {
           result.stocksRemoved += stale.count;
         })
       );
+    }
+
+    // 3) Товары, исчезнувшие из 1С, удаляем — иначе они висят в каталоге с
+    //    замороженными остатками, и их можно заказать.
+    //
+    //    ⚠ Защита от обрезанной выгрузки: синк идёт автоматически, и если 1С
+    //    однажды ответит частичными данными (сбой, обрыв соединения), слепое
+    //    удаление снесло бы каталог. Поэтому чистим, только если выгрузка
+    //    сопоставима по размеру с тем, что уже есть.
+    const feedCodes = products.map(([code]) => code);
+    const totalBefore = await prisma.product.count();
+    const MIN_FEED_RATIO = 0.5;
+
+    if (totalBefore > 0 && feedCodes.length < totalBefore * MIN_FEED_RATIO) {
+      const msg =
+        `[sync] Выгрузка 1С вернула ${feedCodes.length} товаров при ${totalBefore} в каталоге ` +
+        `(меньше ${MIN_FEED_RATIO * 100}%) — удаление пропущено, похоже на неполные данные.`;
+      console.warn(msg);
+      result.removalSkipped = msg;
+    } else {
+      const staleWhere = { code: { notIn: feedCodes } };
+      const staleCount = await prisma.product.count({ where: staleWhere });
+      if (staleCount > 0) {
+        // Товар исчезает из правил подарков и адресных скидок молча —
+        // предупреждаем, чтобы это не всплыло потом «само собой».
+        const [inGifts, inDiscounts] = await Promise.all([
+          prisma.giftRuleTrigger.count({ where: { product: staleWhere } }),
+          prisma.discountRuleProduct.count({ where: { product: staleWhere } }),
+        ]);
+        if (inGifts > 0 || inDiscounts > 0) {
+          console.warn(
+            `[sync] Среди удаляемых товаров: ${inGifts} в правилах подарков, ` +
+              `${inDiscounts} в адресных скидках — эти позиции выпадут из правил.`
+          );
+        }
+        const del = await prisma.product.deleteMany({ where: staleWhere });
+        result.productsRemoved = del.count;
+        console.log(
+          `[sync] Удалено товаров, пропавших из 1С: ${del.count}. ` +
+            `Заказы и возвраты сохранены (в них лежит снимок артикула и цены).`
+        );
+      }
     }
 
     result.ok = true;
