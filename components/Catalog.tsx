@@ -362,18 +362,10 @@ export default function Catalog({
   const [pageSize, setPageSize] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Grid is the default view everywhere the catalog opens (categories,
-  // broadcasts, «Акции»). An active search query flips to the list — it scans
-  // better for SKU/code lookups. Only empty↔non-empty query transitions flip
-  // the view, so a manual toggle mid-search is respected.
+  // Grid is the default view everywhere, search results included (the old
+  // auto-flip to the list on a non-empty query is gone by request). A manual
+  // toggle is the only thing that changes the view.
   const [view, setView] = useState<ViewMode>("grid");
-  const viewQueryRef = useRef("");
-  useEffect(() => {
-    const q = query.trim();
-    const had = viewQueryRef.current !== "";
-    if ((q !== "") !== had) setView(q !== "" ? "list" : "grid");
-    viewQueryRef.current = q;
-  }, [query]);
   // Local per-card qty picks (grid view): the amount is chosen on the card
   // first — the displayed price multiplies live — and lands in the cart only
   // when «В корзину» is pressed (see AddToCartPanel).
@@ -1312,10 +1304,12 @@ export default function Catalog({
                       key={row.id}
                       style={{ animationDelay: `${Math.min(i, 11) * 25}ms` }}
                       className={cx(
-                        "animate-fade-in-up group relative flex flex-col rounded-xl border bg-white transition-all duration-200 hover:z-10 hover:shadow-lg",
+                        "animate-fade-in-up group relative flex flex-col rounded-xl border transition-all duration-200 hover:z-10 hover:shadow-lg",
+                        // Точное совпадение — как в списке: красная заливка
+                        // bg-accent/5 плюс выраженная красная рамка.
                         row.exactMatch
-                          ? "border-accent shadow-md ring-2 ring-accent/25"
-                          : "border-line shadow-sm"
+                          ? "border-accent bg-accent/5 shadow-md ring-2 ring-accent/25"
+                          : "border-line bg-white shadow-sm"
                       )}
                     >
                       <div className="relative flex h-28 items-center justify-center overflow-hidden rounded-t-xl border-b border-line bg-gray-50 p-2 sm:h-44 sm:p-3">
