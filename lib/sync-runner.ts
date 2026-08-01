@@ -35,6 +35,7 @@ export async function runSync(trigger: SyncTrigger): Promise<SyncResult> {
       productsUpserted: 0,
       warehousesUpserted: 0,
       stocksUpserted: 0,
+      stocksRemoved: 0,
       durationMs: 0,
       error: "Синхронизация уже выполняется",
     };

@@ -19,6 +19,8 @@ export type SyncResult = {
   productsUpserted: number;
   warehousesUpserted: number;
   stocksUpserted: number;
+  // Строки остатков, удалённые как исчезнувшие из выгрузки 1С.
+  stocksRemoved: number;
   durationMs: number;
   error?: string;
 };
@@ -295,6 +297,7 @@ export async function syncFromOneC(): Promise<SyncResult> {
     productsUpserted: 0,
     warehousesUpserted: 0,
     stocksUpserted: 0,
+    stocksRemoved: 0,
     durationMs: 0,
   };
 
@@ -425,6 +428,7 @@ export async function syncFromOneC(): Promise<SyncResult> {
           result.productsUpserted++;
 
           const stocks = pick(it, STOCKS_KEYS);
+          const seenWarehouseIds: string[] = [];
           if (Array.isArray(stocks)) {
             for (const s of stocks) {
               const wn = asString(pick(s as Raw, WH_NAME_KEYS));
@@ -442,9 +446,25 @@ export async function syncFromOneC(): Promise<SyncResult> {
                 create: { productId: product.id, warehouseId: whId, qty },
                 update: { qty },
               });
+              seenWarehouseIds.push(whId);
               result.stocksUpserted++;
             }
           }
+
+          // Склады, пропавшие из выгрузки, нужно УДАЛИТЬ. 1С перестаёт слать
+          // склад, когда товар там закончился, а раньше мы только обновляли
+          // пришедшее — старая строка висела вечно, и витрина показывала
+          // остаток, которого нет. Повторный синк её не исправлял: этого
+          // склада просто нет во входных данных.
+          const stale = await prisma.stock.deleteMany({
+            where: {
+              productId: product.id,
+              ...(seenWarehouseIds.length
+                ? { warehouseId: { notIn: seenWarehouseIds } }
+                : {}),
+            },
+          });
+          result.stocksRemoved += stale.count;
         })
       );
     }
