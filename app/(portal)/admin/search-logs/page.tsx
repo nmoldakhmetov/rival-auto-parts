@@ -52,8 +52,8 @@ export default async function SearchLogsPage({
         <ClientSearchFilter clients={clients} value={clientId} />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-line bg-white">
-        <table className="data-table">
+      <div className="overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="data-table min-w-[640px]">
           <thead>
             <tr>
               <th className="w-48">Дата</th>

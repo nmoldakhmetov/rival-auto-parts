@@ -424,8 +424,8 @@ function StaffTable({
 }) {
   const [editId, setEditId] = useState<string | null>(null);
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-white">
-      <table className="data-table">
+    <div className="overflow-x-auto rounded-lg border border-line bg-white">
+      <table className="data-table min-w-[760px]">
         <thead>
           <tr>
             <th>Сотрудник</th>

@@ -368,9 +368,9 @@ export default function AnalogsManager({
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-line bg-white">
-        <table className="data-table">
+      {/* Table. overflow-x-auto — на телефоне таблица прокручивается вбок. */}
+      <div className="overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="data-table min-w-[640px]">
           <thead>
             <tr>
               <th className="w-1/3">Код аналога</th>

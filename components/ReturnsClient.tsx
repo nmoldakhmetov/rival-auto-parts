@@ -258,8 +258,8 @@ export default function ReturnsClient({
 
       {/* My returns */}
       <h2 className="mb-3 text-sm font-bold text-ink">Мои возвраты</h2>
-      <div className="overflow-hidden rounded-lg border border-line bg-white">
-        <table className="data-table">
+      <div className="overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="data-table min-w-[820px]">
           <thead>
             <tr>
               <th className="w-16">№</th>

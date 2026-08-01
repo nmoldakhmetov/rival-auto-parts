@@ -254,9 +254,10 @@ export default function OrdersAdmin() {
         {loading && <Loader2 size={16} className="animate-spin text-muted" />}
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-line bg-white">
-        <table className="data-table">
+      {/* Table. overflow-x-auto, а не overflow-hidden: на телефоне таблицу
+          нужно прокручивать вбок, иначе правые колонки просто отрезаны. */}
+      <div className="overflow-x-auto rounded-lg border border-line bg-white">
+        <table className="data-table min-w-[1000px]">
           <thead>
             <tr>
               <th className="w-8"></th>
