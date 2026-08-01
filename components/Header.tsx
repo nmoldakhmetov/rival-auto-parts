@@ -45,8 +45,6 @@ const DEPTS = {
     email: "rivalautokz.1@gmail.com",
   },
 };
-const WA_NUMBER = "77767103014";
-
 function Dept({ d }: { d: (typeof DEPTS)["retail"] }) {
   return (
     <div>
@@ -96,9 +94,6 @@ export default function Header({ manager }: { manager?: Manager | null }) {
     }
   }
 
-  // The green WhatsApp button prefers the client's own manager.
-  const waNumber = manager?.phone ? normalizePhone(manager.phone) : WA_NUMBER;
-
   // Power-user hotkey: "/" focuses the global search from anywhere
   // (ignored while typing in another field), Escape blurs it.
   useEffect(() => {
@@ -122,14 +117,19 @@ export default function Header({ manager }: { manager?: Manager | null }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  // Enter в поле и «лупа» рядом делают одно и то же.
+  function runSearch() {
     const q = query.trim();
-    if (q) addSearchHistory(q); // Enter commits the query into the history
+    if (q) addSearchHistory(q); // commits the query into the history
     if (pathname === "/catalog") return; // the catalog searches live as you type
     // Carry the query in the URL so the route change doesn't reset it (see
     // SearchReset) and the search becomes a shareable deep link.
     router.push(q ? `/catalog?q=${encodeURIComponent(q)}` : "/catalog");
+  }
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    runSearch();
   }
 
   return (
@@ -203,40 +203,29 @@ export default function Header({ manager }: { manager?: Manager | null }) {
         )}
       </form>
 
+      {/* «Лупа» вплотную к строке поиска (все разрешения): набранный запрос
+          запускает поиск, как Enter; пустой — фокусирует поле, поднимая
+          клавиатуру и выпадашку недавних запросов. */}
+      <button
+        type="button"
+        title="Поиск"
+        aria-label="Открыть поиск"
+        onClick={() => {
+          if (query.trim()) {
+            runSearch();
+          } else {
+            searchRef.current?.focus();
+            searchRef.current?.select();
+          }
+        }}
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink transition-all duration-200 hover:border-accent/40 hover:text-accent"
+      >
+        <Search size={18} />
+      </button>
+
       <div className="ml-auto flex items-center gap-2">
         {/* Broadcasts / promos (clients only — self-hides otherwise) */}
         <BroadcastBell />
-
-        {/* Мобильная «лупа» вместо WhatsApp: фокусирует глобальный поиск —
-            поднимается клавиатура и выпадашка недавних запросов. */}
-        <button
-          type="button"
-          title="Поиск"
-          aria-label="Открыть поиск"
-          onClick={() => {
-            searchRef.current?.focus();
-            searchRef.current?.select();
-          }}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink transition-all duration-200 hover:border-accent/40 hover:text-accent sm:hidden"
-        >
-          <Search size={18} />
-        </button>
-
-        {/* WhatsApp — только на десктопе (на мобильном его место занимает
-            поиск). Пишет менеджеру клиента, иначе — на номер отдела. */}
-        <a
-          href={`https://wa.me/${waNumber}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={
-            manager?.phone
-              ? `Написать менеджеру (${manager.fullName}) в WhatsApp`
-              : "Написать в WhatsApp"
-          }
-          className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#25D366]/10 text-[#1FAF53] transition-all duration-200 hover:bg-[#25D366] hover:text-white hover:shadow-md sm:flex"
-        >
-          <MessageCircle size={18} />
-        </a>
 
         {/* Phone + dropdown */}
         <div
