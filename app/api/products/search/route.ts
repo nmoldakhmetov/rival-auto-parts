@@ -201,13 +201,18 @@ export async function GET(req: NextRequest) {
     const triggerIds = [
       ...new Set((await getActiveGiftRules()).flatMap((r) => r.triggerIds)),
     ];
+    // Скидка засчитывается, только если цена РЕАЛЬНО ниже прежней:
+    //  • в БД — oldPrice > price (страховка от устаревших строк, где цена
+    //    успела вырасти: иначе товар с подорожанием висел в «Акциях»);
+    //  • по клиенту — наценка может съесть акцию 1С и поднять итоговую цену
+    //    выше старой, тогда это уже не акция (см. priceFor: бейдж гаснет).
     const dropWhere: Prisma.ProductWhereInput =
       dropDays > 0
         ? {
-            oldPrice: { not: null },
+            oldPrice: { not: null, gt: prisma.product.fields.price },
             priceDropAt: { gt: new Date(dropCutoffMs) },
           }
-        : { oldPrice: { not: null } };
+        : { oldPrice: { not: null, gt: prisma.product.fields.price } };
 
     const giftWhere: Prisma.ProductWhereInput = {
       AND: [...and, { id: { in: triggerIds } }],
@@ -220,17 +225,43 @@ export async function GET(req: NextRequest) {
       ],
     };
 
-    const [giftTotal, discTotal] = await Promise.all([
-      triggerIds.length > 0 ? prisma.product.count({ where: giftWhere }) : 0,
-      prisma.product.count({ where: discWhere }),
-    ]);
-    total = giftTotal + discTotal;
+    // Наценки индивидуальны, в SQL их не выразить: берём кандидатов «в цене»
+    // (набор небольшой — он ограничен сроком акции) и отсеиваем те, где для
+    // ЭТОГО клиента скидки не осталось. Список ID уже отсортирован, так что
+    // страницу режем по нему, а тяжёлые данные с остатками грузим только для
+    // строк текущей страницы.
+    const discCandidates = await prisma.product.findMany({
+      where: discWhere,
+      select: {
+        id: true,
+        price: true,
+        oldPrice: true,
+        category: true,
+        brand: true,
+        isFinalPrice: true,
+      },
+      orderBy,
+    });
+    const discIds = discCandidates
+      .filter(
+        (p) =>
+          priceFor(
+            Number(p.price),
+            p.oldPrice != null ? Number(p.oldPrice) : null,
+            disc.pctFor(p)
+          ).discountPct > 0
+      )
+      .map((p) => p.id);
+
+    const giftTotal =
+      triggerIds.length > 0 ? await prisma.product.count({ where: giftWhere }) : 0;
+    total = giftTotal + discIds.length;
 
     const offset = (page - 1) * PAGE_SIZE;
     const giftSkip = Math.min(offset, giftTotal);
     const giftTake = Math.max(0, Math.min(PAGE_SIZE, giftTotal - offset));
     const discSkip = Math.max(0, offset - giftTotal);
-    const discTake = PAGE_SIZE - giftTake;
+    const pageDiscIds = discIds.slice(discSkip, discSkip + PAGE_SIZE - giftTake);
 
     const [giftProducts, discProducts] = await Promise.all([
       giftTake > 0
@@ -242,13 +273,11 @@ export async function GET(req: NextRequest) {
             take: giftTake,
           })
         : ([] as unknown as ProductWithStocks),
-      discTake > 0
+      pageDiscIds.length > 0
         ? prisma.product.findMany({
-            where: discWhere,
+            where: { id: { in: pageDiscIds } },
             include: stocksInclude,
             orderBy,
-            skip: discSkip,
-            take: discTake,
           })
         : ([] as unknown as ProductWithStocks),
     ]);
