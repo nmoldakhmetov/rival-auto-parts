@@ -29,6 +29,8 @@ import {
   type DeliveryMethod,
 } from "@/lib/order-options";
 
+const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
+
 type CheckoutResult = {
   orderNo: string;
   waLink: string | null;
@@ -40,8 +42,20 @@ export default function Cart({
 }: {
   discountDisplay?: string;
 }) {
-  const { items, setQty, remove, clear } = useCart();
+  const { items, setQty, remove, removeMany, clear } = useCart();
   const [mounted, setMounted] = useState(false);
+  // Выбор позиций для оформления. Храним СНЯТЫЕ галочки, а не поставленные:
+  // по умолчанию выбрано всё, и товар, добавленный уже на этой странице,
+  // автоматически попадает в заказ, а не теряется молча.
+  const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
+  const isChecked = (id: string) => !unchecked.has(id);
+  const toggleOne = (id: string) =>
+    setUnchecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,24 +111,32 @@ export default function Cart({
       .catch(() => {});
   }, []);
 
+  // Всё, что дальше считается и оформляется, берётся ТОЛЬКО из отмеченных
+  // позиций: и «Итого», и подарки, и состав заказа.
+  const selected = useMemo(
+    () => items.filter((i) => !unchecked.has(i.productId)),
+    [items, unchecked]
+  );
+
   const earnedGifts = useMemo(() => {
     if (giftRules.length === 0) return [] as { row: CatalogRow; qty: number }[];
-    const qtyById = new Map(items.map((i) => [i.productId, i.qty]));
+    const qtyById = new Map(selected.map((i) => [i.productId, i.qty]));
     const earned = earnedGiftQty(giftRules, qtyById);
     return [...earned.entries()]
       .map(([id, qty]) => ({ row: giftProducts[id], qty }))
       .filter((g) => g.row);
-  }, [items, giftRules, giftProducts]);
+  }, [selected, giftRules, giftProducts]);
 
   async function checkout() {
     setError(null);
     setLoading(true);
     try {
+      const ordered = selected.map((i) => i.productId);
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: items.map((i) => ({ productId: i.productId, qty: i.qty })),
+          items: selected.map((i) => ({ productId: i.productId, qty: i.qty })),
           comment,
           paymentMethod,
           deliveryMethod,
@@ -130,7 +152,8 @@ export default function Cart({
         waLink: data.waLink,
         manager: data.manager,
       });
-      clear();
+      // Из корзины уходят только оформленные позиции — невыбранные остаются.
+      removeMany(ordered);
       // Auto-open WhatsApp if we have a link.
       if (data.waLink) window.open(data.waLink, "_blank");
     } catch {
@@ -219,10 +242,23 @@ export default function Cart({
           )}
         </div>
 
-        <div className="mt-6 flex justify-center gap-3">
+        {/* После частичного оформления в корзине осталось невыбранное —
+            подсказываем и даём вернуться туда. */}
+        {items.length > 0 && (
+          <p className="mt-4 text-sm text-muted">
+            В корзине остались невыбранные позиции: {items.length}.
+          </p>
+        )}
+
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link href="/" className="btn-ghost">
             Вернуться в каталог
           </Link>
+          {items.length > 0 && (
+            <button onClick={() => setDone(null)} className="btn-ghost">
+              Вернуться в корзину
+            </button>
+          )}
           <Link href="/orders" className="btn-accent">
             Мои заказы
           </Link>
@@ -251,10 +287,17 @@ export default function Cart({
     );
   }
 
-  const total = cartSum(items);
+  const total = cartSum(selected);
+  const allChecked = selected.length === items.length;
+  const noneChecked = selected.length === 0;
+  // «Выбрать все» / «Снять все» одной кнопкой — в корзине оптовика позиций
+  // бывает много, и щёлкать каждую ради полного заказа бессмысленно.
+  const toggleAll = () =>
+    setUnchecked(allChecked ? new Set(items.map((i) => i.productId)) : new Set());
+
   // Total saved on 1С promo drops — shown in the summary when > 0. Derived
   // from the promo % only, so the personal discount stays invisible.
-  const savings = items.reduce(
+  const savings = selected.reduce(
     (s, i) =>
       s +
       (i.oldPrice && i.discountPct && i.discountPct > 0
@@ -270,12 +313,28 @@ export default function Cart({
         Корзина{" "}
         <span className="text-sm font-normal text-muted">
           · {items.length} поз.
+          {!allChecked && ` · выбрано ${selected.length}`}
         </span>
       </h1>
 
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1fr_320px]">
         {/* Items */}
         <div className="min-w-0">
+          {/* Выбор позиций: оформить можно часть корзины, остальное
+              останется на месте. Строка «выбрать все» общая для обоих видов. */}
+          <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-xs font-medium text-ink">
+            <input
+              type="checkbox"
+              checked={allChecked}
+              onChange={toggleAll}
+              className="h-4 w-4 shrink-0 accent-[#E53935]"
+            />
+            {allChecked ? "Снять выделение" : "Выбрать все"}
+            <span className="text-muted">
+              ({selected.length} из {items.length})
+            </span>
+          </label>
+
           {/* Mobile: item cards (no horizontal scrolling) */}
           <div className="space-y-3 sm:hidden">
             {items.map((i) => {
@@ -283,19 +342,33 @@ export default function Cart({
               return (
                 <div
                   key={`m-${i.productId}`}
-                  className="rounded-lg border border-line bg-white p-3"
+                  className={cx(
+                    "rounded-lg border bg-white p-3 transition-colors",
+                    isChecked(i.productId)
+                      ? "border-line"
+                      : "border-dashed border-gray-300 bg-gray-50/60"
+                  )}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-ink">{i.sku}</div>
-                      <div className="line-clamp-2 text-[11px] text-muted">
-                        {i.name}
-                      </div>
-                      {i.pairOnly && (
-                        <div className="mt-0.5 text-[10px] font-semibold text-muted">
-                          продаётся парами (шаг 2 шт)
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={isChecked(i.productId)}
+                        onChange={() => toggleOne(i.productId)}
+                        aria-label={`Выбрать ${i.sku} для оформления`}
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-[#E53935]"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-ink">{i.sku}</div>
+                        <div className="line-clamp-2 text-[11px] text-muted">
+                          {i.name}
                         </div>
-                      )}
+                        {i.pairOnly && (
+                          <div className="mt-0.5 text-[10px] font-semibold text-muted">
+                            продаётся парами (шаг 2 шт)
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={() => remove(i.productId)}
@@ -373,6 +446,16 @@ export default function Cart({
           <table className="data-table">
             <thead>
               <tr>
+                <th className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={toggleAll}
+                    title={allChecked ? "Снять выделение" : "Выбрать все"}
+                    aria-label="Выбрать все позиции"
+                    className="h-4 w-4 accent-[#E53935]"
+                  />
+                </th>
                 <th>Товар</th>
                 <th className="w-28 text-right">Цена</th>
                 <th className="w-36 text-center">Кол-во</th>
@@ -386,7 +469,19 @@ export default function Cart({
                 // any odd value, the buttons move a full pair at a time.
                 const step = i.pairOnly ? 2 : 1;
                 return (
-                <tr key={i.productId}>
+                <tr
+                  key={i.productId}
+                  className={cx(!isChecked(i.productId) && "bg-gray-50/70")}
+                >
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={isChecked(i.productId)}
+                      onChange={() => toggleOne(i.productId)}
+                      aria-label={`Выбрать ${i.sku} для оформления`}
+                      className="h-4 w-4 accent-[#E53935]"
+                    />
+                  </td>
                   <td>
                     <div className="font-semibold text-ink">{i.sku}</div>
                     <div className="text-[11px] text-muted">{i.name}</div>
@@ -450,6 +545,7 @@ export default function Cart({
               })}
               {earnedGifts.map((g) => (
                 <tr key={`gift-${g.row.id}`} className="bg-green-50/50">
+                  <td></td>
                   <td>
                     <div className="flex items-center gap-1.5 font-semibold text-ink">
                       <Gift size={14} className="text-green-600" />
@@ -478,7 +574,16 @@ export default function Cart({
         {/* Summary */}
         <div className="h-fit rounded-lg border border-line bg-white p-5">
           <div className="mb-3 flex items-baseline justify-between">
-            <span className="text-sm text-muted">Итого</span>
+            <span className="text-sm text-muted">
+              Итого
+              {/* Явно говорим, что сумма — по отмеченным позициям, иначе
+                  расхождение с «всей корзиной» выглядит как ошибка. */}
+              {!allChecked && (
+                <span className="block text-[11px] text-muted">
+                  по выбранным ({selected.length} из {items.length})
+                </span>
+              )}
+            </span>
             <span className="text-2xl font-bold text-ink">
               {formatTenge(total)}
             </span>
@@ -572,9 +677,15 @@ export default function Cart({
             </div>
           )}
 
+          {noneChecked && (
+            <div className="mb-3 rounded border border-line bg-gray-50 px-3 py-2 text-xs text-muted">
+              Отметьте товары, которые хотите заказать.
+            </div>
+          )}
+
           <button
             onClick={() => setConfirmOpen(true)}
-            disabled={loading}
+            disabled={loading || noneChecked}
             className="btn-accent w-full"
           >
             {loading ? (
@@ -582,13 +693,18 @@ export default function Cart({
             ) : (
               <Send size={16} />
             )}
-            Оформить заказ
+            {allChecked
+              ? "Оформить заказ"
+              : `Оформить выбранное (${selected.length})`}
           </button>
           <ConfirmDialog
             open={confirmOpen}
             title="Оформление заказа"
             text={
-              `Вы действительно хотите оформить этот заказ? Сумма — ${formatTenge(total)}. ` +
+              `Вы действительно хотите оформить этот заказ? ` +
+              `Позиций — ${selected.length}` +
+              (allChecked ? "" : ` из ${items.length} (остальные останутся в корзине)`) +
+              `, сумма — ${formatTenge(total)}. ` +
               `Оплата: ${PAYMENT_LABELS[paymentMethod].toLowerCase()}, ` +
               `получение: ${DELIVERY_LABELS[deliveryMethod].toLowerCase()}.`
             }

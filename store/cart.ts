@@ -31,6 +31,9 @@ type CartState = {
   add: (item: Omit<CartItem, "qty">, qty?: number) => void;
   setQty: (productId: string, qty: number) => void;
   remove: (productId: string) => void;
+  // Убрать разом несколько позиций: после частичного оформления из корзины
+  // уходят только заказанные, остальные остаются нетронутыми.
+  removeMany: (productIds: string[]) => void;
   clear: () => void;
   // Refresh stale persisted price snapshots (see /api/cart/reprice).
   updatePrices: (prices: Record<string, RepricedFields>) => void;
@@ -73,6 +76,11 @@ export const useCart = create<CartState>()(
         set((state) => ({
           items: state.items.filter((i) => i.productId !== productId),
         })),
+      removeMany: (productIds) =>
+        set((state) => {
+          const gone = new Set(productIds);
+          return { items: state.items.filter((i) => !gone.has(i.productId)) };
+        }),
       clear: () => set({ items: [] }),
       updatePrices: (prices) =>
         set((state) => ({
