@@ -328,8 +328,15 @@ export default function OrdersAdmin() {
                         type="number"
                         value={payEdit.val}
                         onChange={(e) =>
-                          setPayEdit({ id: r.id, val: e.target.value })
+                          setPayEdit({
+                            id: r.id,
+                            // Ведущие нули не копим: набранное поверх «0»
+                            // превращалось в «012876».
+                            val: e.target.value.replace(/^0+(?=\d)/, ""),
+                          })
                         }
+                        onFocus={(e) => e.currentTarget.select()}
+                        placeholder="0"
                         className="input w-24 py-1 text-xs"
                         autoFocus
                       />
@@ -351,7 +358,9 @@ export default function OrdersAdmin() {
                   ) : (
                     <button
                       onClick={() =>
-                        setPayEdit({ id: r.id, val: String(r.paid) })
+                        // Неоплаченный заказ открывается ПУСТЫМ полем, а не
+                        // нулём: иначе введённая сумма дописывалась к нему.
+                        setPayEdit({ id: r.id, val: r.paid ? String(r.paid) : "" })
                       }
                       className="group/p inline-flex items-center gap-1 text-green-700"
                       title="Изменить оплату"

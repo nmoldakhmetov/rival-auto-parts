@@ -3,6 +3,7 @@ import { Prisma, OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { managerUserFilter } from "@/lib/admin-scope";
+import { DEBT_STATUSES, countsAsDebt } from "@/lib/balance";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
   }
   const where: Prisma.OrderWhereInput = and.length ? { AND: and } : {};
 
-  const [total, orders, agg] = await Promise.all([
+  const [total, orders, agg, debtAgg] = await Promise.all([
     prisma.order.count({ where }),
     prisma.order.findMany({
       where,
@@ -58,6 +59,12 @@ export async function GET(req: NextRequest) {
       take: PAGE_SIZE,
     }),
     prisma.order.aggregate({ where, _sum: { total: true, paid: true } }),
+    // Долг суммируется только по долговым статусам — иначе итог внизу не
+    // сходился бы со столбцом «Долг» и с балансами клиентов.
+    prisma.order.aggregate({
+      where: { AND: [where, { status: { in: DEBT_STATUSES } }] },
+      _sum: { total: true, paid: true },
+    }),
   ]);
 
   const rows = orders.map((o) => {
@@ -70,7 +77,9 @@ export async function GET(req: NextRequest) {
       status: o.status,
       total: totalNum,
       paid: paidNum,
-      debt: totalNum - paidNum,
+      // «Отказ клиента» и заказы, ещё не взятые в работу, долгом не считаются
+      // — раньше в колонке висела полная сумма отменённого заказа.
+      debt: countsAsDebt(o.status) ? totalNum - paidNum : 0,
       itemsCount: o._count.items,
       client: o.user
         ? { fullName: o.user.fullName, email: o.user.email, login: o.user.login }
@@ -80,6 +89,8 @@ export async function GET(req: NextRequest) {
 
   const sumTotal = Number(agg._sum.total ?? 0);
   const sumPaid = Number(agg._sum.paid ?? 0);
+  const sumDebt =
+    Number(debtAgg._sum.total ?? 0) - Number(debtAgg._sum.paid ?? 0);
 
   return NextResponse.json({
     rows,
@@ -87,6 +98,6 @@ export async function GET(req: NextRequest) {
     page,
     pageSize: PAGE_SIZE,
     totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
-    sums: { total: sumTotal, paid: sumPaid, debt: sumTotal - sumPaid },
+    sums: { total: sumTotal, paid: sumPaid, debt: sumDebt },
   });
 }

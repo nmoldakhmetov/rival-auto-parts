@@ -1,11 +1,17 @@
 // Пересчитывает баланс всех клиентов по формуле:
 //
-//     balance = Σ (total − paid) по всем заказам клиента, кроме отменённых
+//     balance = Σ (total − paid) по заказам в статусах
+//               «В работе» · «Выдано» · «Выполнен»
 //
-// Положительное значение = долг. Раньше долг прибавлялся к балансу один раз
+// Положительное значение = долг. Заявка, ещё не взятая в работу, и «Отказ
+// клиента» долгом не считаются. Раньше долг прибавлялся к балансу один раз
 // при переводе заказа в «Выдано», поэтому новые заказы в баланс не попадали,
 // а правка «оплачено» его не уменьшала. Скрипт разово приводит боевые данные
 // к формуле — дальше баланс поддерживает сам портал (lib/balance.ts).
+//
+// ⚠ Список статусов продублирован здесь намеренно: скрипт запускается на
+// проде отдельно от сборки и не может импортировать server-only модуль.
+// Если меняете DEBT_STATUSES в lib/balance.ts — поправьте и здесь.
 //
 //   node scripts/recalc-balances.mjs          — только отчёт, что изменится
 //   node scripts/recalc-balances.mjs --yes    — записать новые балансы
@@ -44,9 +50,11 @@ const clients = await prisma.user.findMany({
 
 // Долги считаем одним запросом, а не по клиенту — на боевой базе клиентов
 // сотни, и по два запроса на каждого превратились бы в тысячи round-trip'ов.
+const DEBT_STATUSES = ["PROCESSING", "ISSUED", "COMPLETED"];
+
 const sums = await prisma.order.groupBy({
   by: ["userId"],
-  where: { status: { not: "CANCELLED" } },
+  where: { status: { in: DEBT_STATUSES } },
   _sum: { total: true, paid: true },
 });
 const debtByUser = new Map(
@@ -61,7 +69,7 @@ for (const c of clients) {
 }
 
 console.log(`Клиентов в базе:        ${clients.length}`);
-console.log(`С заказами:             ${debtByUser.size}`);
+console.log(`С заказами в работе:    ${debtByUser.size}`);
 console.log(`Баланс изменится у:     ${changes.length}\n`);
 
 if (changes.length > 0) {
