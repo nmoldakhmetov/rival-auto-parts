@@ -24,10 +24,12 @@ import {
   Gift,
   Settings,
   LogOut,
+  KeyRound,
   X,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { useCart } from "@/store/cart";
 import { useUi } from "@/store/ui";
 import { formatTenge } from "@/lib/format";
@@ -127,6 +129,9 @@ export default function Sidebar({
       new Map(cartItems.map((i) => [i.productId, i.qty]))
     )
   );
+
+  // Модалка смены своего пароля (доступна из блока пользователя).
+  const [pwdOpen, setPwdOpen] = useState(false);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -339,29 +344,62 @@ export default function Sidebar({
             <div
               className={cx(
                 "mx-1 mb-2 flex items-center justify-between rounded-md px-3 py-2 text-xs",
-                balance < 0
+                // Положительный баланс = ДОЛГ (сумма неоплаченных заказов),
+                // как в карточке клиента в админке. Раньше здесь стояло
+                // обратное сравнение, и реальный долг показывался клиенту
+                // нейтральным «Балансом».
+                balance > 0
                   ? "bg-accent/20 text-red-200"
                   : "bg-white/5 text-white/70",
                 mini && "lg:hidden"
               )}
               title={
-                balance < 0
+                balance > 0
                   ? "Задолженность перед Rival Auto"
                   : "Ваш текущий баланс"
               }
             >
-              <span>{balance < 0 ? "Долг" : "Баланс"}</span>
+              <span>{balance > 0 ? "Долг" : "Баланс"}</span>
               <span className="font-bold tabular-nums">
                 {formatTenge(Math.abs(balance))}
               </span>
             </div>
           )}
-          <div className={cx("px-2 pb-2", mini && "lg:hidden")}>
-            <div className="truncate text-sm font-semibold">{fullName}</div>
-            <div className="truncate text-[11px] text-white/40">
-              {login} · {roleLabel[role]}
+          {/* Имя + логин, справа — ключик «Сменить пароль»: место, где
+              пользователь и так ищет свои настройки. Доступно всем ролям. */}
+          <div
+            className={cx(
+              "flex items-center gap-2 px-2 pb-2",
+              mini && "lg:hidden"
+            )}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">{fullName}</div>
+              <div className="truncate text-[11px] text-white/40">
+                {login} · {roleLabel[role]}
+              </div>
             </div>
+            <button
+              onClick={() => setPwdOpen(true)}
+              title="Сменить пароль"
+              aria-label="Сменить пароль"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-sidebar-hover hover:text-white"
+            >
+              <KeyRound size={16} />
+            </button>
           </div>
+          {/* В свёрнутом меню подписи не видно — ключик становится отдельной
+              строкой-иконкой, как «Выйти». */}
+          {mini && (
+            <button
+              onClick={() => setPwdOpen(true)}
+              title="Сменить пароль"
+              aria-label="Сменить пароль"
+              className="hidden w-full items-center justify-center rounded-md px-0 py-2 text-white/70 transition-colors hover:bg-sidebar-hover hover:text-white lg:flex"
+            >
+              <KeyRound size={16} className="shrink-0" />
+            </button>
+          )}
           <button
             onClick={logout}
             title="Выйти"
@@ -375,6 +413,7 @@ export default function Sidebar({
           </button>
         </div>
       </aside>
+      {pwdOpen && <ChangePasswordDialog onClose={() => setPwdOpen(false)} />}
     </>
   );
 }

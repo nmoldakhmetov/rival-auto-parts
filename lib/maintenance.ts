@@ -2,10 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 
 // Periodic housekeeping (runs every 10 min + on server start):
-//  1. Auto-block: a CLIENT whose balance has been negative for longer than
-//     `auto_block_days` gets isActive=false (the manager unblocks manually).
-//     `debtSince` is stamped when the balance first goes negative and cleared
-//     once it recovers — so paying the debt always resets the countdown.
+//  1. Auto-block: a CLIENT who has owed money for longer than `auto_block_days`
+//     gets isActive=false (the manager unblocks manually). `debtSince` is
+//     stamped when the balance first goes POSITIVE (balance = сумма долгов по
+//     заказам, см. lib/balance) and cleared once the debt is paid off — so
+//     paying always resets the countdown. NB: до этого здесь стояло обратное
+//     сравнение (balance < 0), из-за чего должники не отмечались вовсе.
 //  2. Expire price-drop discounts older than `price_drop_days`.
 //  3. Drop stale auto-"новинка" stamps (cosmetic cleanup).
 
@@ -29,13 +31,13 @@ export async function runMaintenance(): Promise<MaintenanceResult> {
 
   // ── 1. Debt tracking + auto-block ────────────────────────────────────
   const marked = await prisma.user.updateMany({
-    where: { role: "CLIENT", balance: { lt: 0 }, debtSince: null },
+    where: { role: "CLIENT", balance: { gt: 0 }, debtSince: null },
     data: { debtSince: now },
   });
   res.debtMarked = marked.count;
 
   const cleared = await prisma.user.updateMany({
-    where: { role: "CLIENT", balance: { gte: 0 }, debtSince: { not: null } },
+    where: { role: "CLIENT", balance: { lte: 0 }, debtSince: { not: null } },
     data: { debtSince: null },
   });
   res.debtCleared = cleared.count;
@@ -47,7 +49,7 @@ export async function runMaintenance(): Promise<MaintenanceResult> {
       where: {
         role: "CLIENT",
         isActive: true,
-        balance: { lt: 0 },
+        balance: { gt: 0 },
         debtSince: { lt: cutoff },
       },
       data: { isActive: false },

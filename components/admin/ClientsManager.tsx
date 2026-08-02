@@ -18,9 +18,13 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import Link from "next/link";
 import { formatTenge, formatDateTime } from "@/lib/format";
+import { MIN_PASSWORD, checkPassword } from "@/lib/password";
 import type { Role } from "@/lib/jwt";
 import LocalityPicker from "@/components/admin/LocalityPicker";
 import { toast } from "@/store/toast";
@@ -72,54 +76,19 @@ async function patchClient(id: string, body: Record<string, unknown>) {
   });
 }
 
-// ─── Inline balance editor ────────────────────────────────────────────────
-function BalanceCell({
-  value,
-  onSave,
-}: {
-  value: number;
-  onSave: (v: number) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(String(value));
-
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1">
-        <input
-          type="number"
-          value={val}
-          onChange={(e) => setVal(e.target.value)}
-          className="input w-24 py-1 text-xs"
-          autoFocus
-        />
-        <button
-          onClick={() => {
-            const n = Number(val);
-            if (Number.isFinite(n)) onSave(n);
-            setEditing(false);
-          }}
-          className="flex h-6 w-6 items-center justify-center rounded bg-accent text-white"
-        >
-          <Save size={12} />
-        </button>
-        <button
-          onClick={() => {
-            setVal(String(value));
-            setEditing(false);
-          }}
-          className="flex h-6 w-6 items-center justify-center rounded border border-line text-muted"
-        >
-          <X size={12} />
-        </button>
-      </div>
-    );
-  }
+// ─── Balance (read-only) ──────────────────────────────────────────────────
+// Баланс = сумма долгов по заказам клиента (lib/balance.ts). Поле больше не
+// правится руками: единственный рычаг — «оплачено» в разделе «Заказы», иначе
+// ручное значение затёрлось бы при следующем же изменении заказа.
+function BalanceCell({ value }: { value: number }) {
   return (
-    <button
-      onClick={() => setEditing(true)}
-      className="group/bal inline-flex items-center gap-1.5"
-      title="Изменить баланс"
+    <span
+      className="inline-flex items-center gap-1.5"
+      title={
+        value > 0
+          ? "Долг по неоплаченным заказам. Уменьшается, когда в разделе «Заказы» проставят оплату."
+          : "Задолженности нет"
+      }
     >
       <span
         className={cx(
@@ -130,11 +99,7 @@ function BalanceCell({
         {formatTenge(value)}
       </span>
       {value > 0 && <span className="text-[10px] text-accent">долг</span>}
-      <Pencil
-        size={11}
-        className="text-gray-300 opacity-0 transition-opacity group-hover/bal:opacity-100"
-      />
-    </button>
+    </span>
   );
 }
 
@@ -1028,10 +993,7 @@ export default function ClientsManager({
                     )}
                   </td>
                   <td>
-                    <BalanceCell
-                      value={c.balance}
-                      onSave={(v) => patch(c.id, { balance: v })}
-                    />
+                    <BalanceCell value={c.balance} />
                   </td>
                   <td>
                     <button
@@ -1260,7 +1222,133 @@ function ClientDetails({
         >
           <Save size={14} /> Сохранить детали
         </button>
+
+        <ResetPasswordBox clientId={client.id} login={client.login} />
       </div>
+    </div>
+  );
+}
+
+// ─── Сброс пароля клиента ─────────────────────────────────────────────────
+// Клиент забыл пароль и звонит своему менеджеру, а не в поддержку, поэтому
+// сброс доступен и менеджеру (сервер проверит, что клиент закреплён за ним).
+// Текущий пароль не спрашиваем — в этом и смысл сброса; новый пароль виден
+// только здесь, чтобы его продиктовать, и в базу уходит одним bcrypt-хэшем.
+function ResetPasswordBox({
+  clientId,
+  login,
+}: {
+  clientId: string;
+  login: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function save() {
+    setError(null);
+    const weak = checkPassword(password);
+    if (weak) {
+      setError(weak);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/clients/${clientId}/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Не удалось сменить пароль");
+        return;
+      }
+      setDone(true);
+    } catch {
+      setError("Сервер недоступен. Повторите попытку.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-[11px] text-muted transition-colors hover:border-accent/40 hover:text-ink"
+      >
+        <KeyRound size={13} className="shrink-0 text-accent" />
+        Сменить пароль клиенту
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-line bg-gray-50 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-ink">
+          <KeyRound size={13} className="text-accent" /> Новый пароль для «
+          {login}»
+        </span>
+        <button
+          onClick={() => {
+            setOpen(false);
+            setPassword("");
+            setError(null);
+            setDone(false);
+          }}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-gray-200 hover:text-ink"
+          aria-label="Отмена"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      {done ? (
+        <div className="text-[11px] text-green-700">
+          Пароль изменён. Продиктуйте его клиенту — увидеть повторно будет
+          нельзя, в базе хранится только зашифрованный вид.
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5">
+            <input
+              type={show ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={`минимум ${MIN_PASSWORD} символов`}
+              autoComplete="new-password"
+              className="input py-1.5 text-xs"
+            />
+            <button
+              onClick={() => setShow((s) => !s)}
+              title={show ? "Скрыть" : "Показать"}
+              aria-label={show ? "Скрыть пароль" : "Показать пароль"}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line text-muted hover:text-ink"
+            >
+              {show ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
+            <button
+              onClick={save}
+              disabled={saving || !password}
+              className="btn-accent shrink-0 px-2.5 py-1.5 text-xs"
+            >
+              {saving ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Save size={13} />
+              )}
+            </button>
+          </div>
+          {error && (
+            <div className="mt-1.5 text-[11px] text-accent">{error}</div>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { managerOwnsClient } from "@/lib/admin-scope";
+import { recalcUserBalance } from "@/lib/balance";
 
 export const dynamic = "force-dynamic";
 
@@ -82,8 +83,8 @@ export async function GET(
   });
 }
 
-// PATCH: change status / paid amount. When an order is ISSUED, its outstanding
-// debt is credited to the client's balance (once).
+// PATCH: change status / paid amount. Любая правка суммы оплаты или статуса
+// пересчитывает баланс клиента (= сумма долгов по его заказам, см. lib/balance).
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -113,24 +114,13 @@ export async function PATCH(
     if (Number.isFinite(p) && p >= 0) data.paid = p;
   }
 
-  const newStatus = data.status ?? order.status;
-  const newPaid = data.paid ?? Number(order.paid);
-  const debt = Number(order.total) - newPaid;
-  const shouldApplyDebt =
-    newStatus === "ISSUED" && !order.debtApplied && debt > 0;
-
-  await prisma.$transaction(async (tx) => {
-    await tx.order.update({
-      where: { id: order.id },
-      data: { ...data, ...(shouldApplyDebt ? { debtApplied: true } : {}) },
-    });
-    if (shouldApplyDebt) {
-      await tx.user.update({
-        where: { id: order.userId },
-        data: { balance: { increment: debt } },
-      });
-    }
+  // Долг по заказу = total − paid, и он уже учтён в балансе с момента
+  // оформления. Здесь достаточно пересчитать баланс: правка «оплачено»
+  // уменьшает его, отмена заказа убирает долг целиком.
+  const balance = await prisma.$transaction(async (tx) => {
+    await tx.order.update({ where: { id: order.id }, data });
+    return recalcUserBalance(order.userId, tx);
   });
 
-  return NextResponse.json({ ok: true, debtApplied: shouldApplyDebt });
+  return NextResponse.json({ ok: true, balance });
 }

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { managerOwnsClient } from "@/lib/admin-scope";
 
-// PATCH: update a client — manager, active state, balance, city, comment.
+// PATCH: update a client — manager, active state, city, comment.
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -12,7 +12,6 @@ export async function PATCH(
   let body: {
     managerId?: string | null;
     isActive?: boolean;
-    balance?: number | string;
     city?: string;
     comment?: string;
     // Профиль: правится и для клиентов, и для сотрудников.
@@ -32,10 +31,9 @@ export async function PATCH(
   const data: Prisma.UserUncheckedUpdateInput = {};
   if ("managerId" in body) data.managerId = body.managerId || null;
   if ("isActive" in body) data.isActive = Boolean(body.isActive);
-  if ("balance" in body) {
-    const b = Number(body.balance);
-    if (Number.isFinite(b)) data.balance = b;
-  }
+  // Баланс вручную НЕ правится: он считается по формуле из заказов
+  // (lib/balance.ts), и ручная правка всё равно затёрлась бы при первом же
+  // изменении заказа. Двигать долг можно только полем «оплачено» в «Заказах».
   if ("city" in body) data.city = String(body.city ?? "").trim() || null;
   if ("comment" in body) data.comment = String(body.comment ?? "").trim() || null;
   if ("address" in body) data.address = String(body.address ?? "").trim() || null;

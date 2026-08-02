@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { buildWaLink } from "@/lib/whatsapp";
 import { formatTenge } from "@/lib/format";
 import { getDiscountContext } from "@/lib/pricing";
+import { recalcUserBalance } from "@/lib/balance";
 import { buildOneCComment, sendOrderToOneC } from "@/lib/onec-orders";
 import { getActiveGiftRules } from "@/lib/gifts";
 import { earnedGiftQty } from "@/lib/gift-earn";
@@ -162,6 +163,15 @@ export async function POST(req: NextRequest) {
       items: { create: orderItems },
     },
   });
+
+  // Сумма заказа сразу становится долгом клиента: баланс = сумма (total −
+  // paid) по его заказам и уменьшится, только когда админ или бухгалтер
+  // проставит оплату в разделе «Заказы».
+  await recalcUserBalance(session.sub).catch((e) =>
+    // Заказ уже сохранён и ушёл в 1С — падать из-за баланса нельзя, но и
+    // молча терять расхождение тоже: следующая правка заказа его починит.
+    console.error(`[balance] Заказ ${order.id}: баланс не пересчитан — ${e}`)
+  );
 
   const manager = me?.manager ?? null;
   const orderNo = order.id.slice(-6).toUpperCase();
