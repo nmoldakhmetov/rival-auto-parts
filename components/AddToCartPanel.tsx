@@ -75,13 +75,15 @@ export default function AddToCartPanel({
     }, 1600);
   }
 
-  // Подпись у кнопки прячется на узких экранах: на телефоне «В корзину»
-  // занимало половину карточки, иконки достаточно.
-  const label = added ? "Добавлено" : "В корзину";
+  // Кнопка без подписи — только иконка корзины (галочка на подтверждении).
+  // Текст «В корзину» съедал место на карточке, а смысл иконки очевиден;
+  // подпись осталась в title/aria-label для доступности.
+  const label = added ? "Добавлено в корзину" : "Добавить выбранное количество";
   const button = (
     <button
       onClick={commit}
-      title={added ? "Добавлено в корзину" : "Добавить выбранное количество"}
+      title={label}
+      aria-label={label}
       className={
         added
           ? `btn h-9 whitespace-nowrap bg-green-600 text-white ${row ? "shrink-0 px-3" : "mt-2 w-full"}`
@@ -89,9 +91,6 @@ export default function AddToCartPanel({
       }
     >
       {added ? <Check size={16} /> : <ShoppingCart size={16} />}
-      <span className={row ? "hidden text-[11px] xl:inline" : "hidden sm:inline"}>
-        {label}
-      </span>
     </button>
   );
 
