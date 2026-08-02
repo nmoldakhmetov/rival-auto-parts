@@ -160,14 +160,38 @@ export default function Header({ manager }: { manager?: Manager | null }) {
           }}
           onBlur={() => setSearchFocused(false)}
           placeholder="Поиск по артикулу, марке или применяемости…"
-          className="w-full rounded-lg border border-line bg-gray-50 py-2.5 pl-4 pr-12 text-sm outline-none transition-all duration-200 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20"
+          className={cx(
+            // transition (а не transition-all): переходы только для цвета и
+            // тени. С transition-all анимировался и padding-right, и текст
+            // дёргался вправо в момент появления крестика.
+            "w-full rounded-lg border border-line bg-gray-50 py-2.5 pl-4 text-sm outline-none transition duration-200 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20",
+            // Место справа: только под кнопку поиска в пустом поле, под
+            // кнопку + крестик, когда есть что чистить.
+            query === "" ? "pr-12" : "pr-[4.75rem]"
+          )}
         />
         {/* Подсказка хоткея видна только в пустом поле — набранный текст
             никогда не заезжает под неё, и паддинг не зависит от брейкпоинта. */}
-        {query.trim() === "" && (
+        {query === "" && (
           <kbd className="pointer-events-none absolute right-14 top-1/2 hidden -translate-y-1/2 rounded border border-line bg-white px-1.5 py-0.5 text-[10px] font-semibold text-muted sm:block">
             /
           </kbd>
+        )}
+        {/* Крестик очистки — только когда в поле что-то есть. Чистит запрос
+            и возвращает фокус, чтобы можно было сразу набрать новый. */}
+        {query !== "" && (
+          <button
+            type="button"
+            title="Очистить"
+            aria-label="Очистить поиск"
+            onClick={() => {
+              setQuery("");
+              searchRef.current?.focus();
+            }}
+            className="absolute right-12 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted transition-colors hover:bg-gray-200 hover:text-ink"
+          >
+            <X size={15} />
+          </button>
         )}
         {/* Набранный запрос запускает поиск, как Enter; пустой — фокусирует
             поле (на телефоне поднимает клавиатуру и историю запросов). */}
