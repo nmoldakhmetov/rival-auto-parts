@@ -2,6 +2,11 @@
 
 import { Lock, Phone, Mail, MessageCircle, LogOut } from "lucide-react";
 
+// Экран блокировки. Раньше это была модалка ПОВЕРХ портала, и клиент
+// продолжал ходить по разделам: закрыть её было нельзя, но переход по ссылке
+// перерисовывал страницу без неё. Теперь портальный layout вместо всего
+// приложения (меню, шапка, содержимое) рендерит только этот экран — ходить
+// просто некуда, доступна лишь кнопка «Выйти».
 export default function BlockOverlay({
   message,
   manager,
@@ -18,8 +23,10 @@ export default function BlockOverlay({
     : null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl bg-white p-7 text-center shadow-2xl">
+    // h-[100dvh]: на iOS Safari h-screen прячет низ карточки под панель
+    // браузера — кнопка «Выйти» оказывалась недостижимой.
+    <div className="flex h-[100dvh] w-full items-center justify-center overflow-y-auto bg-ink/95 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-2xl sm:p-7">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
           <Lock size={26} />
         </div>

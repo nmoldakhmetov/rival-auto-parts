@@ -44,6 +44,13 @@ export default async function PortalLayout({
     }
   }
 
+  // Заблокированный клиент не получает портал вообще: ни меню, ни шапки, ни
+  // содержимого — только экран блокировки. Оверлей поверх приложения не
+  // годился, клиент спокойно ходил по разделам под ним.
+  if (blocked) {
+    return <BlockOverlay message={blocked.message} manager={blocked.manager} />;
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <CartSync enabled={session.role === "CLIENT"} />
@@ -62,9 +69,6 @@ export default async function PortalLayout({
           {children}
         </main>
       </div>
-      {blocked && (
-        <BlockOverlay message={blocked.message} manager={blocked.manager} />
-      )}
       <Toasts />
     </div>
   );
