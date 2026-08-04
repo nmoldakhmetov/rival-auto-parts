@@ -806,8 +806,7 @@ export default function Cart({
               <span>
                 Выберите склад для {needWarehouse.length}{" "}
                 {needWarehouse.length === 1 ? "позиции" : "позиций"}:{" "}
-                {needWarehouse.map((i) => i.sku).join(", ")}. Товары с разных
-                складов уедут в 1С отдельными заказами.
+                {needWarehouse.map((i) => i.sku).join(", ")}.
               </span>
             </div>
           )}
