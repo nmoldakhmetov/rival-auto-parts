@@ -362,10 +362,32 @@ export default function Catalog({
   const [pageSize, setPageSize] = useState(50);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Grid is the default view everywhere, search results included (the old
-  // auto-flip to the list on a non-empty query is gone by request). A manual
-  // toggle is the only thing that changes the view.
+  // Сетка — вид по умолчанию везде. На ДЕСКТОПЕ поисковый запрос переключает
+  // выдачу в список: артикулы так сканируются глазами быстрее, а места хватает.
+  // На телефоне (в том числе в PWA с домашнего экрана) список пришлось бы
+  // листать вбок, поэтому там остаётся сетка.
+  //
+  // Порог lg (1024px) — тот же, на котором приложение само переходит в
+  // «десктопный» режим (боковое меню вместо шторки).
   const [view, setView] = useState<ViewMode>("grid");
+  const viewQueryRef = useRef("");
+  useEffect(() => {
+    const q = query.trim();
+    const had = viewQueryRef.current !== "";
+    const has = q !== "";
+    viewQueryRef.current = q;
+    // Реагируем только на переход «пусто ↔ не пусто», иначе ручное
+    // переключение вида посреди поиска сбрасывалось бы на каждой букве.
+    if (has === had) return;
+    const desktop =
+      typeof window !== "undefined" &&
+      window.matchMedia("(min-width: 1024px)").matches;
+    if (has) {
+      if (desktop) setView("list");
+    } else {
+      setView("grid");
+    }
+  }, [query]);
   // Local per-card qty picks (grid view): the amount is chosen on the card
   // first — the displayed price multiplies live — and lands in the cart only
   // when «В корзину» is pressed (see AddToCartPanel).
