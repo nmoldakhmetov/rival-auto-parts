@@ -581,6 +581,10 @@ function StaffEditor({
           Отмена
         </button>
       </div>
+
+      {/* Пароль сотрудника меняется тут же, где правится его профиль —
+          раньше для этого приходилось идти на сервер и запускать скрипт. */}
+      <ResetPasswordBox clientId={member.id} login={member.login} />
     </div>
   );
 }

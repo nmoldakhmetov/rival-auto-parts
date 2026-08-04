@@ -6,15 +6,21 @@ import { checkPassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/admin/clients/[id]/password — задать клиенту новый пароль.
+// POST /api/admin/clients/[id]/password — задать пользователю новый пароль.
 //
-// Кто может: ADMIN и RA — любому клиенту, MANAGER — только своим (клиент
-// звонит менеджеру, а не в поддержку). ACCOUNTANT в разделе только смотрит.
-// Сотрудников (менеджеров, бухгалтеров, RA) здесь не трогаем: их пароли
-// меняет владелец через scripts/set-password.mjs.
+// Кто кому может:
+//   ADMIN      — вообще всем: клиентам и сотрудникам (менеджеры, бухгалтеры,
+//                RA), включая другого администратора;
+//   RA         — клиентам и сотрудникам, КРОМЕ администраторов: иначе RA
+//                сменил бы пароль владельцу и забрал аккаунт с полными
+//                правами, включая «Настройки», которых у него нет;
+//   MANAGER    — только своим клиентам (клиент звонит менеджеру, а не в
+//                поддержку);
+//   ACCOUNTANT — никому, у него раздел только на чтение.
 //
-// Текущий пароль не спрашивается — в том и смысл сброса: клиент его забыл.
-// Новый пароль сообщает клиенту тот, кто сбросил; в базе только bcrypt-хэш.
+// Текущий пароль не спрашивается — в том и смысл сброса: его забыли.
+// Новый пароль сообщает пользователю тот, кто сбросил; в базе только
+// bcrypt-хэш, в лог пишем факт, но не сам пароль.
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -45,16 +51,31 @@ export async function POST(
     select: { id: true, login: true, role: true },
   });
   if (!target) {
-    return NextResponse.json({ error: "Клиент не найден" }, { status: 404 });
-  }
-  if (target.role !== "CLIENT") {
     return NextResponse.json(
-      { error: "Через этот раздел меняется пароль только клиентам" },
-      { status: 403 }
+      { error: "Пользователь не найден" },
+      { status: 404 }
     );
   }
-  if (!(await managerOwnsClient(session, target.id))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  if (target.role === "CLIENT") {
+    // Менеджер — только своим; остальным ролям managerOwnsClient вернёт true.
+    if (!(await managerOwnsClient(session, target.id))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  } else {
+    // Сотрудник: менеджеру и бухгалтеру сюда нельзя, RA — мимо администратора.
+    if (session.role === "MANAGER") {
+      return NextResponse.json(
+        { error: "Пароли сотрудников меняет администратор" },
+        { status: 403 }
+      );
+    }
+    if (session.role === "RA" && target.role === "ADMIN") {
+      return NextResponse.json(
+        { error: "Пароль администратора меняет только сам администратор" },
+        { status: 403 }
+      );
+    }
   }
 
   await prisma.user.update({
@@ -64,7 +85,7 @@ export async function POST(
 
   // Сам пароль в лог не пишем — только кто и кому его сменил.
   console.log(
-    `[auth] Пароль клиента «${target.login}» сброшен пользователем «${session.login}»`
+    `[auth] Пароль пользователя «${target.login}» (${target.role}) сброшен пользователем «${session.login}»`
   );
 
   return NextResponse.json({ ok: true });
