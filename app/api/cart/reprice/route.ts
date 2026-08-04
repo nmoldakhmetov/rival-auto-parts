@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getDiscountContext, priceFor } from "@/lib/pricing";
 import { getSetting } from "@/lib/settings";
+import { warehouseOptionsFor } from "@/lib/order-warehouses";
+import { capStockForClient } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +30,15 @@ export async function POST(req: NextRequest) {
     .slice(0, 500);
   if (ids.length === 0) return NextResponse.json({ prices: {} });
 
-  const [products, disc, dropDaysStr] = await Promise.all([
+  const [products, disc, dropDaysStr, whOptions] = await Promise.all([
     prisma.product.findMany({ where: { id: { in: ids } } }),
     getDiscountContext(session.sub, session.role),
     getSetting("price_drop_days"),
+    // Склады, доступные клиенту по каждой позиции: если их больше одного,
+    // корзина попросит выбрать, с какого заказывать.
+    session.role === "CLIENT"
+      ? warehouseOptionsFor(session.sub, ids)
+      : Promise.resolve(new Map()),
   ]);
 
   // Same strike-through lifetime rule as /api/products/search.
@@ -53,5 +60,20 @@ export async function POST(req: NextRequest) {
       disc.pctFor(p)
     );
   }
-  return NextResponse.json({ prices });
+
+  // Точные остатки клиенту не показываем — то же правило, что в каталоге
+  // (всё, что больше порога, отдаётся как «>70»).
+  const warehouses: Record<string, { name: string; qty: number; capped?: boolean }[]> =
+    {};
+  for (const [productId, list] of whOptions as Map<
+    string,
+    { name: string; qty: number }[]
+  >) {
+    warehouses[productId] = capStockForClient(
+      list.map((w) => ({ warehouse: w.name, qty: w.qty })),
+      session.role === "CLIENT"
+    ).map((c) => ({ name: c.warehouse, qty: c.qty, capped: c.capped }));
+  }
+
+  return NextResponse.json({ prices, warehouses });
 }

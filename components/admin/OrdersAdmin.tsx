@@ -46,6 +46,9 @@ type OrderItem = {
   price: number;
   qty: number;
   isGift: boolean;
+  // Склад, с которого заказана строка (null у старых заказов и когда
+  // остатка нигде не было).
+  warehouse: string | null;
   // Live catalog links — null when the product no longer exists in 1С.
   productId: string | null;
   imageUrl: string | null;
@@ -450,6 +453,7 @@ export default function OrdersAdmin() {
                                   <th className="w-14">Фото</th>
                                   <th className="w-40">Артикул</th>
                                   <th>Наименование</th>
+                                  <th className="w-36">Склад</th>
                                   <th className="w-28 text-right">Цена</th>
                                   <th className="w-20 text-center">Кол-во</th>
                                   <th className="w-28 text-right">Сумма</th>
@@ -497,6 +501,19 @@ export default function OrdersAdmin() {
                                       {it.isGift && (
                                         <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                                           <Gift size={10} /> подарок
+                                        </span>
+                                      )}
+                                    </td>
+                                    {/* Склад строки: по нему заказ разбивался
+                                        на документы 1С. */}
+                                    <td className="text-[11px]">
+                                      {it.warehouse ? (
+                                        <span className="text-ink">
+                                          {it.warehouse}
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted">
+                                          под заказ
                                         </span>
                                       )}
                                     </td>

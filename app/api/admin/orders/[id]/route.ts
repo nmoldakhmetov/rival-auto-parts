@@ -76,6 +76,9 @@ export async function GET(
         price: Number(i.price),
         qty: i.qty,
         isGift: i.isGift,
+        // Склад, с которого заказана строка: по нему заказ разбивался на
+        // документы 1С.
+        warehouse: i.warehouse,
         productId: i.product?.id ?? null,
         imageUrl: i.product?.imageUrl ?? null,
       })),

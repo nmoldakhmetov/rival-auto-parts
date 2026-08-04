@@ -5,6 +5,11 @@ import { buildWaLink } from "@/lib/whatsapp";
 import { formatTenge } from "@/lib/format";
 import { getDiscountContext } from "@/lib/pricing";
 import { recalcUserBalance } from "@/lib/balance";
+import {
+  warehouseOptionsFor,
+  pickWarehouse,
+  groupByWarehouse,
+} from "@/lib/order-warehouses";
 import { buildOneCComment, sendOrderToOneC } from "@/lib/onec-orders";
 import { getActiveGiftRules } from "@/lib/gifts";
 import { earnedGiftQty } from "@/lib/gift-earn";
@@ -22,7 +27,13 @@ import {
 
 export const dynamic = "force-dynamic";
 
-type IncomingItem = { productId: string; qty: number };
+// `warehouse` — выбор клиента в корзине (см. lib/order-warehouses.ts).
+// Сервер его проверяет и, если выбор пуст или устарел, подставляет свой.
+type IncomingItem = {
+  productId: string;
+  qty: number;
+  warehouse?: string | null;
+};
 
 // Hard cap on a single line's quantity: protects the Decimal(12,2) total and
 // mirrors the UI cap in CartQtySelector / the cart store.
@@ -79,6 +90,13 @@ export async function POST(req: NextRequest) {
   // Apply the client's discount rules (per-product) to the order price.
   const disc = await getDiscountContext(session.sub, session.role);
 
+  // Склады клиента по каждой позиции: выбор из корзины принимается, только
+  // если склад всё ещё доступен и с остатком, иначе подставляется свой.
+  const whOptions = await warehouseOptionsFor(
+    session.sub,
+    incoming.map((i) => i.productId)
+  );
+
   let total = 0;
   const orderItems: {
     productId: string;
@@ -87,12 +105,16 @@ export async function POST(req: NextRequest) {
     price: number;
     qty: number;
     isGift: boolean;
+    warehouse: string | null;
   }[] = [];
+  // Строки для 1С идут параллельным списком: у каждой свой склад, по нему
+  // заказ разбивается на документы.
   const onecProducts: {
     code: string | null;
     sku: string;
     qty: number;
     price: number;
+    warehouse: string | null;
   }[] = [];
   const qtyById = new Map<string, number>();
   for (const i of incoming) {
@@ -102,6 +124,7 @@ export async function POST(req: NextRequest) {
     // «Диски UIDNU» are sold strictly in pairs — snap to even (min 2).
     if (isPairOnly(p.category)) qty = snapPairQty(qty);
     const price = Math.round(Number(p.price) * (1 - disc.pctFor(p) / 100));
+    const warehouse = pickWarehouse(whOptions.get(p.id), i.warehouse);
     total += price * qty;
     qtyById.set(p.id, (qtyById.get(p.id) ?? 0) + qty);
     orderItems.push({
@@ -111,8 +134,9 @@ export async function POST(req: NextRequest) {
       price,
       qty,
       isGift: false,
+      warehouse,
     });
-    onecProducts.push({ code: p.code, sku: p.sku, qty, price });
+    onecProducts.push({ code: p.code, sku: p.sku, qty, price, warehouse });
   }
 
   if (orderItems.length === 0) {
@@ -128,11 +152,18 @@ export async function POST(req: NextRequest) {
   const giftRules = await getActiveGiftRules();
   const earned = earnedGiftQty(giftRules, qtyById);
   if (earned.size > 0) {
-    const giftProducts = await prisma.product.findMany({
-      where: { id: { in: [...earned.keys()] } },
-    });
+    const giftIds = [...earned.keys()];
+    const [giftProducts, giftWh] = await Promise.all([
+      prisma.product.findMany({ where: { id: { in: giftIds } } }),
+      warehouseOptionsFor(session.sub, giftIds),
+    ]);
+    // Подарок едет со склада, где он лежит; если остатка нигде нет — цепляем
+    // его к складу первой оплаченной строки, чтобы он не уехал отдельным
+    // документом «без склада» и не потерялся у менеджера.
+    const fallbackWh = orderItems[0]?.warehouse ?? null;
     for (const gp of giftProducts) {
       const giftQty = earned.get(gp.id) ?? 1;
+      const warehouse = pickWarehouse(giftWh.get(gp.id)) ?? fallbackWh;
       orderItems.push({
         productId: gp.id,
         sku: gp.sku,
@@ -140,8 +171,15 @@ export async function POST(req: NextRequest) {
         price: 0,
         qty: giftQty,
         isGift: true,
+        warehouse,
       });
-      onecProducts.push({ code: gp.code, sku: gp.sku, qty: giftQty, price: 0 });
+      onecProducts.push({
+        code: gp.code,
+        sku: gp.sku,
+        qty: giftQty,
+        price: 0,
+        warehouse,
+      });
     }
   }
 
@@ -177,26 +215,81 @@ export async function POST(req: NextRequest) {
   const orderNo = order.id.slice(-6).toUpperCase();
 
   // Push the order to 1С (best-effort: the order is already saved locally).
-  const onec = await sendOrderToOneC({
-    site_order_id: orderNo,
-    client_name: me?.fullName ?? "",
-    client_phone: me?.phone ?? "",
-    comment: buildOneCComment({
-      pickup: deliveryMethod === "PICKUP",
-      city: me?.city,
-      address: me?.address,
-      comment: body.comment,
-    }),
-    products: onecProducts,
-  });
-  if (onec.ok) {
+  //
+  // Товары с разных складов уходят РАЗНЫМИ документами — по одному на склад:
+  // на «БК склад» и «БК склад 2» заказ собирают разные люди, и общая заявка
+  // им не годится. Когда склад один (обычный случай), уходит ровно один
+  // документ с прежним номером — поведение не меняется.
+  const whGroups = groupByWarehouse(onecProducts, (p) => p.warehouse);
+  const split = whGroups.length > 1;
+  const onecResults: { warehouse: string | null; ok: boolean; number?: string; error?: string }[] =
+    [];
+
+  for (const [idx, group] of whGroups.entries()) {
+    // Номер документа: при разбивке — с суффиксом, иначе 1С может посчитать
+    // документы одним заказом и перезаписать предыдущий.
+    const siteOrderId = split ? `${orderNo}-${idx + 1}` : orderNo;
+    const res = await sendOrderToOneC({
+      site_order_id: siteOrderId,
+      client_name: me?.fullName ?? "",
+      client_phone: me?.phone ?? "",
+      warehouse: group.warehouse,
+      comment: buildOneCComment({
+        pickup: deliveryMethod === "PICKUP",
+        city: me?.city,
+        address: me?.address,
+        comment: body.comment,
+        // Склад дублируем в комментарий: даже если 1С не читает поле
+        // `warehouse`, менеджер видит принадлежность документа.
+        warehouse: split ? group.warehouse : null,
+      }),
+      products: group.lines.map((l) => ({
+        code: l.code,
+        sku: l.sku,
+        qty: l.qty,
+        price: l.price,
+      })),
+    });
+    onecResults.push({
+      warehouse: group.warehouse,
+      ok: res.ok,
+      number: res.orderNumber,
+      error: res.error,
+    });
+    if (!res.ok) {
+      console.warn(
+        `[1c] Заказ №${siteOrderId} (склад «${group.warehouse ?? "не определён"}»): НЕ отправлен — ${res.error ?? "причина неизвестна"}`
+      );
+    }
+  }
+
+  const onecOk = onecResults.every((r) => r.ok);
+  const onecNumbers = onecResults
+    .filter((r) => r.ok && r.number)
+    .map((r) => r.number as string);
+  if (onecNumbers.length > 0 || onecOk) {
     await prisma.order
       .update({
         where: { id: order.id },
-        data: { onecSent: true, onecNumber: onec.orderNumber ?? null },
+        data: {
+          onecSent: onecOk,
+          onecNumber: onecNumbers.length > 0 ? onecNumbers.join(", ") : null,
+        },
       })
       .catch(() => {});
   }
+  if (split) {
+    console.log(
+      `[1c] Заказ №${orderNo} разбит по складам на ${whGroups.length} док.: ` +
+        onecResults
+          .map(
+            (r) =>
+              `${r.warehouse ?? "без склада"} — ${r.ok ? r.number ?? "ok" : "ошибка"}`
+          )
+          .join("; ")
+    );
+  }
+  const onec = { ok: onecOk };
 
   // Big orders would blow past URL limits (~2K chars) and break the wa.me
   // link entirely — cap the message; the full order is always in the portal.
@@ -223,28 +316,12 @@ export async function POST(req: NextRequest) {
 
   const waLink = manager?.phone ? buildWaLink(manager.phone, text) : null;
 
-  // «Направление» и «Срок» в письме: склады с остатком, к которым у клиента
-  // есть доступ. Берём на момент письма — в заказе склад не фиксируется.
-  const accessRows = await prisma.clientWarehouseAccess.findMany({
-    where: { userId: session.sub },
-    select: { warehouseId: true },
-  });
-  const allowedWhIds = accessRows.map((a) => a.warehouseId);
-  const stockRows = allowedWhIds.length
-    ? await prisma.stock.findMany({
-        where: {
-          productId: { in: orderItems.map((i) => i.productId) },
-          warehouseId: { in: allowedWhIds },
-          qty: { gt: 0 },
-        },
-        select: { productId: true, warehouse: { select: { name: true } } },
-      })
-    : [];
+  // «Направление» в письме — склад, с которого позиция реально заказана
+  // (выбор клиента или авто-подстановка). Раньше сюда шли ВСЕ склады с
+  // остатком, и менеджер не понимал, откуда везти.
   const whByProduct = new Map<string, string[]>();
-  for (const s of stockRows) {
-    const list = whByProduct.get(s.productId) ?? [];
-    list.push(s.warehouse.name);
-    whByProduct.set(s.productId, list);
+  for (const i of orderItems) {
+    if (i.warehouse) whByProduct.set(i.productId, [i.warehouse]);
   }
 
   // Notify the assigned manager by e-mail. Best-effort: a mail outage must

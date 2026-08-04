@@ -9,6 +9,11 @@ export type OneCOrderPayload = {
   client_name: string;
   client_phone: string;
   comment: string;
+  // Склад документа. Заказ с товарами с разных складов уходит в 1С
+  // НЕСКОЛЬКИМИ документами — по одному на склад (см. /api/orders).
+  // Поле добавлено к прежнему контракту: если 1С его не читает, документы
+  // всё равно приходят раздельно, а склад продублирован в комментарии.
+  warehouse?: string | null;
   products: {
     code: string | null;
     sku: string;
@@ -43,8 +48,13 @@ export function buildOneCComment(opts: {
   city?: string | null;
   address?: string | null;
   comment?: string | null;
+  // Склад документа — когда заказ разбит по складам, менеджер должен видеть
+  // это прямо в комментарии, даже если 1С не читает поле `warehouse`.
+  warehouse?: string | null;
 }): string {
   const parts: string[] = [];
+  const wh = clean(opts.warehouse);
+  if (wh) parts.push(`Склад: ${wh}`);
   if (opts.pickup) {
     parts.push("Самовывоз");
   } else {

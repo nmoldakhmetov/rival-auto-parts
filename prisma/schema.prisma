@@ -244,6 +244,9 @@ model OrderItem {
   price     Decimal @db.Decimal(12, 2) // snapshot at order time
   qty       Int
   isGift    Boolean @default(false) // авто-добавленный подарок (цена 0)
+  // Склад, с которого заказана строка (снимок на момент заказа): по нему
+  // заказ разбивается на документы 1С. null — остатка нигде не было.
+  warehouse String?
 
   order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)

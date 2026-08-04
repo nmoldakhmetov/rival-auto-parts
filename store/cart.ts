@@ -14,6 +14,11 @@ export type CartItem = {
   imageUrl?: string | null;
   pairOnly?: boolean; // «Диски UIDNU»: строго чётное количество (шаг 2)
   qty: number;
+  // Склад, с которого клиент решил заказать эту позицию. Заполняется в
+  // корзине, когда у товара несколько доступных складов (заказ уходит в 1С
+  // отдельным документом на каждый склад). Старые сохранённые корзины поля
+  // не имеют — оно опциональное, сервер подставит склад сам.
+  warehouse?: string | null;
 };
 
 // Upper bound for a single line — matches the input cap in CartQtySelector
@@ -34,6 +39,8 @@ type CartState = {
   // Убрать разом несколько позиций: после частичного оформления из корзины
   // уходят только заказанные, остальные остаются нетронутыми.
   removeMany: (productIds: string[]) => void;
+  // Выбор склада для позиции (см. CartItem.warehouse).
+  setWarehouse: (productId: string, warehouse: string | null) => void;
   clear: () => void;
   // Refresh stale persisted price snapshots (see /api/cart/reprice).
   updatePrices: (prices: Record<string, RepricedFields>) => void;
@@ -81,6 +88,12 @@ export const useCart = create<CartState>()(
           const gone = new Set(productIds);
           return { items: state.items.filter((i) => !gone.has(i.productId)) };
         }),
+      setWarehouse: (productId, warehouse) =>
+        set((state) => ({
+          items: state.items.map((i) =>
+            i.productId === productId ? { ...i, warehouse } : i
+          ),
+        })),
       clear: () => set({ items: [] }),
       updatePrices: (prices) =>
         set((state) => ({
