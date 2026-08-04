@@ -234,14 +234,13 @@ export async function POST(req: NextRequest) {
       client_name: me?.fullName ?? "",
       client_phone: me?.phone ?? "",
       warehouse: group.warehouse,
+      // Склад в комментарий НЕ пишем — он едет отдельным полем `warehouse`,
+      // а в комментарии заказчику нужен только адрес и его собственный текст.
       comment: buildOneCComment({
         pickup: deliveryMethod === "PICKUP",
         city: me?.city,
         address: me?.address,
         comment: body.comment,
-        // Склад дублируем в комментарий: даже если 1С не читает поле
-        // `warehouse`, менеджер видит принадлежность документа.
-        warehouse: split ? group.warehouse : null,
       }),
       products: group.lines.map((l) => ({
         code: l.code,

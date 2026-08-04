@@ -48,13 +48,8 @@ export function buildOneCComment(opts: {
   city?: string | null;
   address?: string | null;
   comment?: string | null;
-  // Склад документа — когда заказ разбит по складам, менеджер должен видеть
-  // это прямо в комментарии, даже если 1С не читает поле `warehouse`.
-  warehouse?: string | null;
 }): string {
   const parts: string[] = [];
-  const wh = clean(opts.warehouse);
-  if (wh) parts.push(`Склад: ${wh}`);
   if (opts.pickup) {
     parts.push("Самовывоз");
   } else {

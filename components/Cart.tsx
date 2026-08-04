@@ -376,15 +376,6 @@ export default function Cart({
   const needWarehouse = selected.filter(
     (i) => (whOptions[i.productId]?.length ?? 0) > 1 && !i.warehouse
   );
-  // Склады, задействованные выбранными позициями: сколько их, столько
-  // документов уйдёт в 1С.
-  const usedWarehouses = [
-    ...new Set(
-      selected
-        .map((i) => i.warehouse ?? whOptions[i.productId]?.[0]?.name ?? null)
-        .filter((w): w is string => !!w)
-    ),
-  ];
   // «Выбрать все» / «Снять все» одной кнопкой — в корзине оптовика позиций
   // бывает много, и щёлкать каждую ради полного заказа бессмысленно.
   const toggleAll = () =>
@@ -844,11 +835,7 @@ export default function Cart({
               (allChecked ? "" : ` из ${items.length} (остальные останутся в корзине)`) +
               `, сумма — ${formatTenge(total)}. ` +
               `Оплата: ${PAYMENT_LABELS[paymentMethod].toLowerCase()}, ` +
-              `получение: ${DELIVERY_LABELS[deliveryMethod].toLowerCase()}.` +
-              // Разбивка по складам — не сюрприз: предупреждаем заранее.
-              (usedWarehouses.length > 1
-                ? ` Товары с разных складов (${usedWarehouses.join(", ")}) уйдут в 1С отдельными заказами.`
-                : "")
+              `получение: ${DELIVERY_LABELS[deliveryMethod].toLowerCase()}.`
             }
             confirmLabel="Да"
             cancelLabel="Нет"
