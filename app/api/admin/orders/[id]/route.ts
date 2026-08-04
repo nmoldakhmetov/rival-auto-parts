@@ -37,7 +37,11 @@ export async function GET(
         orderBy: [{ isGift: "asc" }, { sku: "asc" }],
         // Photo + id come from the live product (null if it was removed from
         // the catalog since); the textual fields stay order-time snapshots.
-        include: { product: { select: { id: true, imageUrl: true } } },
+        include: {
+          product: {
+            select: { id: true, imageUrl: true, isFinalPrice: true },
+          },
+        },
       },
       user: {
         select: {
@@ -79,6 +83,10 @@ export async function GET(
         // Склад, с которого заказана строка: по нему заказ разбивался на
         // документы 1С.
         warehouse: i.warehouse,
+        // «Окончательная цена» из 1С: на такие товары скидка клиента НЕ
+        // действует (наценка действует). Без этой пометки менеджер не
+        // понимает, почему в заказе часть позиций без скидки.
+        isFinalPrice: i.product?.isFinalPrice ?? false,
         productId: i.product?.id ?? null,
         imageUrl: i.product?.imageUrl ?? null,
       })),

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import ClientsManager from "@/components/admin/ClientsManager";
+import { discountSummaries, EMPTY_SUMMARY } from "@/lib/discount-summary";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Клиенты — Админ-панель" };
@@ -48,6 +49,10 @@ export default async function AdminClientsPage() {
       : Promise.resolve([]),
   ]);
 
+  // Сводка по скидкам сразу в списке: менеджеру не нужно ради процента
+  // проваливаться в раздел «Скидки» по каждому клиенту.
+  const summaries = await discountSummaries(clientsRaw.map((c) => c.id));
+
   const initialClients = clientsRaw.map((c) => ({
     id: c.id,
     login: c.login,
@@ -63,6 +68,7 @@ export default async function AdminClientsPage() {
     isActive: c.isActive,
     managerId: c.managerId,
     access: c.warehouseAccess.map((a) => a.warehouseId),
+    discountSummary: summaries.get(c.id) ?? EMPTY_SUMMARY,
   }));
 
   const initialStaff = staffRaw.map((s) => ({

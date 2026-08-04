@@ -27,6 +27,9 @@ import { formatTenge, formatDateTime } from "@/lib/format";
 import { MIN_PASSWORD, checkPassword } from "@/lib/password";
 import type { Role } from "@/lib/jwt";
 import LocalityPicker from "@/components/admin/LocalityPicker";
+import DiscountPill, {
+  type DiscountSummaryLite,
+} from "@/components/admin/DiscountPill";
 import { toast } from "@/store/toast";
 
 type ClientRow = {
@@ -43,6 +46,8 @@ type ClientRow = {
   createdAt: string;
   isActive: boolean;
   managerId: string | null;
+  // Сводка «скидка/наценка» — считается на сервере (lib/discount-summary).
+  discountSummary?: DiscountSummaryLite;
   access: string[];
 };
 type ManagerOpt = { id: string; fullName: string };
@@ -935,6 +940,7 @@ export default function ClientsManager({
               <th>Клиент</th>
               <th>Контакты</th>
               <th className="w-48">Менеджер</th>
+              <th className="w-28">Скидка</th>
               <th className="w-36">Баланс</th>
               <th className="w-52">Склады / детали</th>
               <th className="w-24 text-center">Статус</th>
@@ -943,7 +949,7 @@ export default function ClientsManager({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-sm text-muted">
+                <td colSpan={7} className="py-12 text-center text-sm text-muted">
                   {clients.length === 0
                     ? "Клиентов пока нет."
                     : "Под фильтры никто не подошёл."}
@@ -997,6 +1003,9 @@ export default function ClientsManager({
                     )}
                   </td>
                   <td>
+                    <DiscountPill summary={c.discountSummary} />
+                  </td>
+                  <td>
                     <BalanceCell value={c.balance} />
                   </td>
                   <td>
@@ -1044,7 +1053,7 @@ export default function ClientsManager({
                 </tr>
                 {expanded === c.id && (
                   <tr>
-                    <td colSpan={6} className="bg-gray-50 p-4">
+                    <td colSpan={7} className="bg-gray-50 p-4">
                       <div className="grid gap-6 lg:grid-cols-2">
                         <AccessEditor
                           warehouses={warehouses}

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { managerUserFilter } from "@/lib/admin-scope";
 import { DEBT_STATUSES, countsAsDebt } from "@/lib/balance";
+import { discountSummaries } from "@/lib/discount-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,10 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
+  // Скидка клиента прямо в списке заказов — чтобы проверить процент, не
+  // уходя в раздел «Скидки».
+  const summaries = await discountSummaries(orders.map((o) => o.userId));
+
   const rows = orders.map((o) => {
     const totalNum = Number(o.total);
     const paidNum = Number(o.paid);
@@ -75,6 +80,7 @@ export async function GET(req: NextRequest) {
       orderNo: o.id.slice(-6).toUpperCase(),
       createdAt: o.createdAt,
       status: o.status,
+      discountSummary: summaries.get(o.userId) ?? null,
       total: totalNum,
       paid: paidNum,
       // «Отказ клиента» и заказы, ещё не взятые в работу, долгом не считаются

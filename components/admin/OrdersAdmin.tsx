@@ -17,6 +17,9 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatTenge, formatDateTime } from "@/lib/format";
+import DiscountPill, {
+  type DiscountSummaryLite,
+} from "@/components/admin/DiscountPill";
 
 type OrderStatus =
   | "NEW"
@@ -37,6 +40,8 @@ type Row = {
   debt: number;
   itemsCount: number;
   client: { fullName: string; email: string | null; login: string } | null;
+  // Текущая скидка/наценка клиента (lib/discount-summary).
+  discountSummary: DiscountSummaryLite | null;
 };
 
 type OrderItem = {
@@ -49,6 +54,8 @@ type OrderItem = {
   // Склад, с которого заказана строка (null у старых заказов и когда
   // остатка нигде не было).
   warehouse: string | null;
+  // Товар с «окончательной ценой» из 1С — скидка клиента на него не идёт.
+  isFinalPrice: boolean;
   // Live catalog links — null when the product no longer exists in 1С.
   productId: string | null;
   imageUrl: string | null;
@@ -306,8 +313,11 @@ export default function OrdersAdmin() {
                 <td>
                   {r.client ? (
                     <>
-                      <div className="font-medium text-ink">
-                        {r.client.fullName}
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-ink">
+                          {r.client.fullName}
+                        </span>
+                        <DiscountPill summary={r.discountSummary} />
                       </div>
                       <div className="text-[11px] text-muted">
                         {r.client.login}
@@ -501,6 +511,16 @@ export default function OrdersAdmin() {
                                       {it.isGift && (
                                         <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-green-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                                           <Gift size={10} /> подарок
+                                        </span>
+                                      )}
+                                      {/* Почему на позиции нет скидки: 1С
+                                          пометила товар окончательной ценой. */}
+                                      {!it.isGift && it.isFinalPrice && (
+                                        <span
+                                          title="1С пометила товар «окончательная цена» — скидка клиента на него не действует (наценка действует)"
+                                          className="ml-2 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700"
+                                        >
+                                          без скидки
                                         </span>
                                       )}
                                     </td>
