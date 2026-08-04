@@ -20,6 +20,7 @@ import { formatTenge, formatDateTime } from "@/lib/format";
 import DiscountPill, {
   type DiscountSummaryLite,
 } from "@/components/admin/DiscountPill";
+import { toast } from "@/store/toast";
 
 type OrderStatus =
   | "NEW"
@@ -50,6 +51,8 @@ type OrderItem = {
   name: string;
   price: number;
   qty: number;
+  // Сколько было заказано до правки менеджером (null — не трогали).
+  qtyOriginal: number | null;
   isGift: boolean;
   // Склад, с которого заказана строка (null у старых заказов и когда
   // остатка нигде не было).
@@ -64,6 +67,9 @@ type OrderDetails = {
   comment: string | null;
   onecSent: boolean;
   onecNumber: string | null;
+  // Правка состава: когда правили и что написали клиенту.
+  editedAt: string | null;
+  editNote: string | null;
   client: {
     fullName: string;
     login: string;
@@ -75,6 +81,11 @@ type OrderDetails = {
 };
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
+
+// Долговые статусы — тот же список, что на сервере (lib/balance.ts). Нужен
+// здесь, чтобы после правки состава сразу показать верный долг в строке.
+const DEBT_STATUSES: OrderStatus[] = ["PROCESSING", "ISSUED", "COMPLETED"];
+const countsAsDebtStatus = (s: OrderStatus) => DEBT_STATUSES.includes(s);
 
 const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: "NEW", label: "Заказ принят" },
@@ -113,6 +124,12 @@ export default function OrdersAdmin() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, OrderDetails>>({});
   const [detailsLoading, setDetailsLoading] = useState<string | null>(null);
+  // Правка состава заказа: черновик количеств по строкам + сообщение клиенту.
+  // Живёт только пока раскрыт заказ — «Сохранить» отправляет всё разом.
+  const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
+  const [editNote, setEditNote] = useState("");
+  const [savingItems, setSavingItems] = useState(false);
+  const [itemsError, setItemsError] = useState<string | null>(null);
 
   // Hovered order line → floating photo preview. Rendered position:fixed so
   // the surrounding overflow-hidden table wrappers cannot clip it.
@@ -147,6 +164,11 @@ export default function OrdersAdmin() {
   }
 
   function toggleDetails(id: string) {
+    // Черновик правки принадлежит конкретному заказу — при закрытии или
+    // переключении на другой он сбрасывается, чтобы количества не «переехали».
+    setQtyDraft({});
+    setEditNote("");
+    setItemsError(null);
     if (openId === id) {
       setOpenId(null);
       return;
@@ -195,6 +217,68 @@ export default function OrdersAdmin() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: newStatus }),
     });
+  }
+
+  // Сохранить правку количеств. Строки без изменений не шлём — сервер их
+  // всё равно отбросит, а так виден честный счётчик изменённых позиций.
+  async function saveItems(orderId: string) {
+    const d = details[orderId];
+    if (!d) return;
+    const changed = d.items
+      .filter((it) => {
+        const raw = qtyDraft[it.id];
+        if (raw === undefined || raw === "") return false;
+        const n = Number(raw);
+        return Number.isFinite(n) && n >= 0 && n !== it.qty;
+      })
+      .map((it) => ({ id: it.id, qty: Math.trunc(Number(qtyDraft[it.id])) }));
+
+    if (changed.length === 0) {
+      setItemsError("Количество не изменилось");
+      return;
+    }
+    setSavingItems(true);
+    setItemsError(null);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/items`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: changed, note: editNote.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setItemsError(data.error ?? "Не удалось сохранить");
+        return;
+      }
+      // Перечитываем состав (там уже проставлено qtyOriginal) и обновляем
+      // сумму с долгом в строке списка.
+      const fresh = await fetch(`/api/admin/orders/${orderId}`)
+        .then((r) => r.json())
+        .catch(() => null);
+      if (fresh?.order) {
+        setDetails((m) => ({ ...m, [orderId]: fresh.order }));
+      }
+      setRows((rs) =>
+        rs.map((r) =>
+          r.id === orderId
+            ? {
+                ...r,
+                total: data.total ?? r.total,
+                debt: countsAsDebtStatus(r.status)
+                  ? (data.total ?? r.total) - r.paid
+                  : 0,
+              }
+            : r
+        )
+      );
+      setQtyDraft({});
+      setEditNote("");
+      toast.success(`Состав заказа изменён: позиций — ${data.changed}`);
+    } catch {
+      setItemsError("Сервер недоступен. Повторите попытку.");
+    } finally {
+      setSavingItems(false);
+    }
   }
 
   async function savePaid(id: string, paid: number) {
@@ -546,8 +630,46 @@ export default function OrdersAdmin() {
                                         formatTenge(it.price)
                                       )}
                                     </td>
-                                    <td className="text-center font-semibold">
-                                      {it.qty}
+                                    {/* Количество правится прямо здесь: в 1С
+                                        остаток бывает неактуальным, и часть
+                                        позиции отгрузить нечем. 0 = не
+                                        отгружаем вовсе. */}
+                                    <td
+                                      className="text-center"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="flex items-center justify-center gap-1">
+                                        {it.qtyOriginal != null &&
+                                          it.qtyOriginal !== it.qty && (
+                                            <span
+                                              className="text-[11px] text-gray-400 line-through"
+                                              title="Заказано клиентом"
+                                            >
+                                              {it.qtyOriginal}
+                                            </span>
+                                          )}
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={qtyDraft[it.id] ?? String(it.qty)}
+                                          onChange={(e) =>
+                                            setQtyDraft((m) => ({
+                                              ...m,
+                                              [it.id]: e.target.value.replace(
+                                                /^0+(?=\d)/,
+                                                ""
+                                              ),
+                                            }))
+                                          }
+                                          onFocus={(e) => e.currentTarget.select()}
+                                          className={cx(
+                                            "input w-16 px-1 py-1 text-center text-xs",
+                                            qtyDraft[it.id] !== undefined &&
+                                              Number(qtyDraft[it.id]) !== it.qty &&
+                                              "border-accent bg-accent/5 font-semibold"
+                                          )}
+                                        />
+                                      </div>
                                     </td>
                                     <td className="text-right font-semibold text-ink">
                                       {formatTenge(it.price * it.qty)}
@@ -556,6 +678,58 @@ export default function OrdersAdmin() {
                                 ))}
                               </tbody>
                             </table>
+                          </div>
+
+                          {/* Панель правки состава: сообщение клиенту + одно
+                              сохранение на все изменённые строки. */}
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-2 rounded-lg border border-line bg-white p-3"
+                          >
+                            <div className="flex flex-wrap items-end gap-2">
+                              <div className="min-w-[220px] flex-1">
+                                <label className="mb-1 block text-[11px] text-muted">
+                                  Сообщение клиенту (необязательно)
+                                </label>
+                                <input
+                                  value={editNote}
+                                  onChange={(e) => setEditNote(e.target.value)}
+                                  placeholder="Например: на складе не хватило, отгрузим остаток позже"
+                                  className="input py-1.5 text-xs"
+                                />
+                              </div>
+                              <button
+                                onClick={() => saveItems(r.id)}
+                                disabled={savingItems}
+                                className="btn-accent shrink-0 px-3 py-1.5 text-xs"
+                              >
+                                {savingItems ? (
+                                  <Loader2 size={13} className="animate-spin" />
+                                ) : (
+                                  <Save size={13} />
+                                )}
+                                Сохранить состав
+                              </button>
+                            </div>
+                            <p className="mt-1.5 text-[11px] text-muted">
+                              Клиент увидит правку в «Моих заказах»: старое
+                              количество будет зачёркнуто. Сумма заказа и долг
+                              пересчитаются.
+                            </p>
+                            {itemsError && (
+                              <div className="mt-1.5 text-[11px] text-accent">
+                                {itemsError}
+                              </div>
+                            )}
+                            {details[r.id].editedAt && (
+                              <div className="mt-1.5 text-[11px] text-muted">
+                                Последняя правка:{" "}
+                                {formatDateTime(details[r.id].editedAt as string)}
+                                {details[r.id].editNote
+                                  ? ` · «${details[r.id].editNote}»`
+                                  : ""}
+                              </div>
+                            )}
                           </div>
 
                           {details[r.id].comment && (

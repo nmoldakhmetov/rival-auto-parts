@@ -133,6 +133,18 @@ export default function Sidebar({
   // Модалка смены своего пароля (доступна из блока пользователя).
   const [pwdOpen, setPwdOpen] = useState(false);
 
+  // Заказы, состав которых поправил менеджер, а клиент их ещё не открывал.
+  // Опрашиваем при монтировании и при смене маршрута: зайдя в «Мои заказы»,
+  // клиент гасит счётчик, и он должен исчезнуть сразу.
+  const [editedOrders, setEditedOrders] = useState(0);
+  useEffect(() => {
+    if (role !== "CLIENT") return;
+    fetch("/api/orders/edited")
+      .then((r) => r.json())
+      .then((d) => setEditedOrders(Number(d?.count) || 0))
+      .catch(() => {});
+  }, [role, pathname]);
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
@@ -306,8 +318,15 @@ export default function Sidebar({
                 giftUnits={mounted && giftUnits > 0 ? giftUnits : undefined}
               />
               <NavLink href="/favorites" label="Избранное" Icon={Heart} />
-              {/* «Возвраты» живут вкладкой внутри «Моих заказов» */}
-              <NavLink href="/orders" label="Мои заказы" Icon={ClipboardList} />
+              {/* «Возвраты» живут вкладкой внутри «Моих заказов».
+                  Счётчик — заказы, состав которых поправил менеджер и клиент
+                  их ещё не открывал: правку нельзя пропустить. */}
+              <NavLink
+                href="/orders"
+                label="Мои заказы"
+                Icon={ClipboardList}
+                badge={editedOrders > 0 ? editedOrders : undefined}
+              />
             </>
           )}
 

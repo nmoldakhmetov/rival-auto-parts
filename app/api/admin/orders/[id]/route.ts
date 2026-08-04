@@ -72,6 +72,9 @@ export async function GET(
       comment: order.comment,
       onecSent: order.onecSent,
       onecNumber: order.onecNumber,
+      // Правка состава менеджером (см. items/route.ts).
+      editedAt: order.editedAt,
+      editNote: order.editNote,
       client: order.user,
       items: order.items.map((i) => ({
         id: i.id,
@@ -79,6 +82,8 @@ export async function GET(
         name: i.name,
         price: Number(i.price),
         qty: i.qty,
+        // Сколько было заказано до правки (null — позицию не трогали).
+        qtyOriginal: i.qtyOriginal,
         isGift: i.isGift,
         // Склад, с которого заказана строка: по нему заказ разбивался на
         // документы 1С.

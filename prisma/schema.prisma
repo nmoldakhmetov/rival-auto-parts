@@ -225,6 +225,12 @@ model Order {
   onecSent   Boolean @default(false) // выгружен в 1С
   onecNumber String? // номер документа в 1С
 
+  // Правка состава менеджером: в 1С остаток бывает неактуальным, и часть
+  // позиций приходится урезать уже после оформления.
+  editedAt   DateTime? // когда состав правили в последний раз
+  editNote   String? // пояснение клиенту («не хватило на складе» и т.п.)
+  editSeenAt DateTime? // когда клиент открыл «Мои заказы» после правки
+
   user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   items OrderItem[]
 
@@ -243,6 +249,10 @@ model OrderItem {
   name      String // snapshot at order time
   price     Decimal @db.Decimal(12, 2) // snapshot at order time
   qty       Int
+  // Сколько клиент заказал изначально. Заполняется только при правке
+  // состава менеджером — по нему в «Моих заказах» рисуется зачёркнутое
+  // старое количество. null = позицию не трогали.
+  qtyOriginal Int?
   isGift    Boolean @default(false) // авто-добавленный подарок (цена 0)
   // Склад, с которого заказана строка (снимок на момент заказа): по нему
   // заказ разбивается на документы 1С. null — остатка нигде не было.

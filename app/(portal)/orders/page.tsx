@@ -65,6 +65,18 @@ export default async function OrdersPage({
     ? await prisma.return.count({ where: { userId: session.sub } })
     : 0;
 
+  // Клиент открыл раздел — правки состава считаются увиденными. Пометка на
+  // самих заказах остаётся (её видно в карточке), гаснет только счётчик в
+  // меню. Снимаем ПОСЛЕ чтения заказов, чтобы этот заход ещё подсветился.
+  const hadUnseenEdits =
+    isClient && orders.some((o) => o.editedAt && !o.editSeenAt);
+  if (hadUnseenEdits) {
+    await prisma.order.updateMany({
+      where: { userId: session.sub, editedAt: { not: null }, editSeenAt: null },
+      data: { editSeenAt: new Date() },
+    });
+  }
+
   // ─── Returns tab data (only when it is actually open) ────────────────────
   const orderItems: {
     productId: string | null;
@@ -148,6 +160,11 @@ export default async function OrdersPage({
             createdAt: o.createdAt.toISOString(),
             total: Number(o.total),
             comment: o.comment,
+            // Правка состава менеджером: пометка «изменён» держится, пока
+            // клиент не откроет раздел (editSeenAt проставляется ниже).
+            editedAt: o.editedAt ? o.editedAt.toISOString() : null,
+            editNote: o.editNote,
+            editUnseen: o.editedAt != null && o.editSeenAt == null,
             items: o.items.map((i) => ({
               id: i.id,
               productId: i.productId,
@@ -155,6 +172,7 @@ export default async function OrdersPage({
               name: i.name,
               price: Number(i.price),
               qty: i.qty,
+              qtyOriginal: i.qtyOriginal,
             })),
           }))}
         />
