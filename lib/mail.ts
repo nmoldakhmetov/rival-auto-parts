@@ -90,7 +90,12 @@ export function buildOrderMail(d: OrderMailData): {
   html: string;
   text: string;
 } {
-  const subject = `Оформление заказа № ${d.orderNo} на сайте ${SITE}`;
+  // Менеджер видит в списке писем сразу номер и клиента — по прежней теме
+  // («Оформление заказа № X на сайте …») заказы было не различить, пока не
+  // откроешь письмо.
+  const subject = `Заказ с сайта №${d.orderNo}${
+    d.client.fullName.trim() ? ` — ${d.client.fullName.trim()}` : ""
+  }`;
   const pickup = d.deliveryMethod === "PICKUP";
   const fullAddress = [d.client.city, d.client.address]
     .map((s) => (s ?? "").trim())
