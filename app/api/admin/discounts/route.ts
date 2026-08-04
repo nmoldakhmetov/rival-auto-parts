@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { normalizeRule, type RuleBody } from "@/lib/discount-rules";
+import {
+  normalizeRule,
+  duplicateScopeOf,
+  duplicateRuleMessage,
+  type RuleBody,
+} from "@/lib/discount-rules";
 import { invalidatePrefix } from "@/lib/cache";
 import { getSession } from "@/lib/auth";
 import { managerOwnsClient } from "@/lib/admin-scope";
@@ -71,6 +76,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Можно назначать скидку только своим клиентам" },
         { status: 403 }
+      );
+    }
+  }
+
+  // Одному клиенту — одна активная скидка на ту же область (см. lib).
+  const scope = duplicateScopeOf(result.data);
+  if (scope && result.data.active) {
+    const clash = await prisma.discountRule.findFirst({ where: scope });
+    if (clash) {
+      return NextResponse.json(
+        { error: duplicateRuleMessage(result.data), conflictId: clash.id },
+        { status: 409 }
       );
     }
   }

@@ -16,6 +16,7 @@ import {
   Boxes,
   Car,
   Package,
+  BadgePercent,
 } from "lucide-react";
 
 type Client = {
@@ -59,6 +60,120 @@ const TARGET_META: Record<
   CATEGORY: { label: "На категорию", Icon: Tag },
   BRAND: { label: "На марку/бренд", Icon: Car },
 };
+
+// Выбор клиента с поиском. Обычный <select> на боевой базе (650+ клиентов)
+// превращался в бесконечный список, в котором нужного было не найти.
+function ClientPicker({
+  clients,
+  value,
+  onChange,
+}: {
+  clients: Client[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [focused, setFocused] = useState(false);
+  const picked = clients.find((c) => c.id === value) ?? null;
+  // Список виден и когда в поле что-то набрано: иначе, потеряв фокус, можно
+  // остаться с запросом и без подсказок.
+  const open = focused || q.trim() !== "";
+
+  const needle = q.trim().toLowerCase();
+  const found = needle
+    ? clients.filter((c) =>
+        [c.fullName, c.login, c.city ?? ""].some((f) =>
+          f.toLowerCase().includes(needle)
+        )
+      )
+    : clients;
+  // Список режем: рисовать все 650 строк в выпадашке незачем.
+  const shown = found.slice(0, 50);
+
+  if (picked && !open) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/5 px-3 py-2">
+        <Users size={14} className="shrink-0 text-accent" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-ink">
+            {picked.fullName}
+          </div>
+          <div className="truncate text-[11px] text-muted">
+            {picked.login}
+            {picked.city ? ` · ${picked.city}` : ""}
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            onChange("");
+            setQ("");
+            setFocused(true);
+          }}
+          title="Выбрать другого клиента"
+          className="shrink-0 rounded p-1 text-muted transition-colors hover:bg-white hover:text-accent"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <Search
+        size={15}
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+      />
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder="Поиск клиента: ФИО, логин или город…"
+        className="input pl-9"
+      />
+      {open && (
+        // preventDefault на mousedown держит фокус в поле, иначе onBlur
+        // закрыл бы список раньше, чем сработал клик по строке.
+        <div
+          onMouseDown={(e) => e.preventDefault()}
+          className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-lg border border-line bg-white py-1 shadow-lg"
+        >
+          {shown.length === 0 ? (
+            <div className="px-3 py-3 text-xs text-muted">
+              Никого не нашли — проверьте написание.
+            </div>
+          ) : (
+            <>
+              {shown.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => {
+                    onChange(c.id);
+                    setFocused(false);
+                    setQ("");
+                  }}
+                  className="flex w-full flex-col items-start px-3 py-1.5 text-left transition-colors hover:bg-gray-50"
+                >
+                  <span className="text-sm text-ink">{c.fullName}</span>
+                  <span className="text-[11px] text-muted">
+                    {c.login}
+                    {c.city ? ` · ${c.city}` : ""}
+                  </span>
+                </button>
+              ))}
+              {found.length > shown.length && (
+                <div className="px-3 py-1.5 text-[11px] text-muted">
+                  …и ещё {found.length - shown.length}. Уточните запрос.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function DiscountsManager({
   clients,
@@ -172,6 +287,12 @@ export default function DiscountsManager({
     setError("");
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  // Активные правила выбранного клиента — показываем прямо в форме, чтобы
+  // не выдавали вторую скидку поверх существующей.
+  const clientRules = clientId
+    ? rules.filter((r) => r.userId === clientId && r.active)
+    : [];
 
   function addProduct(p: ProductLite) {
     setProducts((prev) => (prev.some((x) => x.id === p.id) ? prev : [...prev, p]));
@@ -413,19 +534,41 @@ export default function DiscountsManager({
               </div>
             )}
             {!toAll && (
-              <select
+              <ClientPicker
+                clients={clients}
                 value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                className="input"
-              >
-                <option value="">— выберите клиента —</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.fullName} ({c.login})
-                    {c.city ? ` · ${c.city}` : ""}
-                  </option>
-                ))}
-              </select>
+                onChange={setClientId}
+              />
+            )}
+            {/* Уже действующие правила выбранного клиента: менеджер видит,
+                что скидка есть, и правит её, а не выдаёт вторую. */}
+            {!toAll && clientId && clientRules.length > 0 && (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                <div className="mb-1 flex items-center gap-1.5 font-semibold">
+                  <BadgePercent size={12} />
+                  У клиента уже есть активные правила:
+                </div>
+                <ul className="space-y-0.5">
+                  {clientRules.map((r) => (
+                    <li key={r.id} className="flex items-center gap-1.5">
+                      <span className="font-semibold">
+                        {r.kind === "MARKUP" ? `+${r.percent}%` : `−${r.percent}%`}
+                      </span>
+                      <span>{TARGET_META[r.target].label.toLowerCase()}</span>
+                      {r.category && <span>· {r.category}</span>}
+                      {r.brand && <span>· {r.brand}</span>}
+                      {r.id !== editingId && (
+                        <button
+                          onClick={() => startEdit(r)}
+                          className="ml-auto shrink-0 font-semibold underline hover:no-underline"
+                        >
+                          изменить
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
 

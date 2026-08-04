@@ -30,6 +30,39 @@ export type NormalizedRule = {
   productIds: string[];
 };
 
+// Одному клиенту — одна скидка на одну и ту же область.
+//
+// Менеджеры путались и выдавали клиенту вторую скидку вместо правки первой:
+// в ценообразовании берётся ЛУЧШАЯ (max), поэтому лишнее правило просто
+// висит и сбивает с толку. Дубликатом считаем активное правило того же вида
+// (скидка/наценка) и той же области у того же клиента. Правила на разные
+// категории/марки не мешают друг другу, поэтому у них в ключ входит ещё и
+// сама категория/марка; адресные правила на ТОВАРЫ не ограничиваем — там
+// пересечение определяется составом списка.
+export function duplicateScopeOf(data: NormalizedRule) {
+  if (data.target === "PRODUCT") return null;
+  return {
+    userId: data.userId,
+    kind: data.kind,
+    target: data.target,
+    category: data.category,
+    brand: data.brand,
+    active: true,
+  };
+}
+
+export function duplicateRuleMessage(data: NormalizedRule): string {
+  const what = data.kind === "MARKUP" ? "наценка" : "скидка";
+  const where =
+    data.target === "ALL"
+      ? "на все товары"
+      : data.target === "CATEGORY"
+        ? `на категорию «${data.category}»`
+        : `на марку «${data.brand}»`;
+  const who = data.userId ? "у этого клиента" : "для всех клиентов";
+  return `Уже есть активная ${what} ${where} ${who}. Отредактируйте её или отключите — вторая такая же не нужна, в цене всё равно применится только лучшая.`;
+}
+
 export function normalizeRule(
   body: RuleBody
 ): { error: string } | { data: NormalizedRule } {

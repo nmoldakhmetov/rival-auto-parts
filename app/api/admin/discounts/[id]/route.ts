@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { normalizeRule } from "@/lib/discount-rules";
+import {
+  normalizeRule,
+  duplicateScopeOf,
+  duplicateRuleMessage,
+} from "@/lib/discount-rules";
 import { invalidatePrefix } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +48,19 @@ export async function PATCH(
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
     const { productIds, ...data } = result.data;
+    // Тот же запрет дублей, что при создании, но себя не считаем.
+    const scope = duplicateScopeOf(result.data);
+    if (scope && result.data.active) {
+      const clash = await prisma.discountRule.findFirst({
+        where: { ...scope, id: { not: params.id } },
+      });
+      if (clash) {
+        return NextResponse.json(
+          { error: duplicateRuleMessage(result.data), conflictId: clash.id },
+          { status: 409 }
+        );
+      }
+    }
     await prisma.discountRule.update({
       where: { id: params.id },
       data: {
