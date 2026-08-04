@@ -12,6 +12,7 @@ import {
   TriangleAlert,
   Gift,
   Info,
+  Warehouse as WarehouseIcon,
 } from "lucide-react";
 import { useCart, cartSum } from "@/store/cart";
 import { formatTenge, formatDiscount } from "@/lib/format";
@@ -31,6 +32,54 @@ import {
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
+// Выбор склада для позиции. Показывается, только когда складов с остатком
+// больше одного: при единственном складе выбирать не из чего, и сервер
+// проставляет его сам. Заказ уходит в 1С отдельным документом на каждый
+// склад, поэтому выбор обязателен — без него оформление заблокировано.
+function WarehousePicker({
+  options,
+  value,
+  onChange,
+}: {
+  options: { name: string; qty: number; capped?: boolean }[];
+  value?: string | null;
+  onChange: (name: string) => void;
+}) {
+  return (
+    <div className="mt-1.5">
+      <div
+        className={cx(
+          "mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide",
+          value ? "text-muted" : "text-accent"
+        )}
+      >
+        <WarehouseIcon size={11} />
+        {value ? "Склад" : "Выберите склад"}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {options.map((o) => (
+          <button
+            key={o.name}
+            type="button"
+            onClick={() => onChange(o.name)}
+            className={cx(
+              "rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+              value === o.name
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-line bg-white text-muted hover:border-accent/40 hover:text-ink"
+            )}
+          >
+            {o.name}
+            <span className="ml-1 text-[10px] opacity-70">
+              {o.capped ? `>${o.qty}` : o.qty} шт
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type CheckoutResult = {
   orderNo: string;
   waLink: string | null;
@@ -42,8 +91,14 @@ export default function Cart({
 }: {
   discountDisplay?: string;
 }) {
-  const { items, setQty, remove, removeMany, clear } = useCart();
+  const { items, setQty, remove, removeMany, setWarehouse, clear } = useCart();
   const [mounted, setMounted] = useState(false);
+  // Склады, доступные клиенту по каждой позиции (из /api/cart/reprice).
+  // Если их больше одного — клиент выбирает, с какого заказывать: заказ
+  // уходит в 1С отдельным документом на каждый склад.
+  const [whOptions, setWhOptions] = useState<
+    Record<string, { name: string; qty: number; capped?: boolean }[]>
+  >({});
   // Выбор позиций для оформления. Храним СНЯТЫЕ галочки, а не поставленные:
   // по умолчанию выбрано всё, и товар, добавленный уже на этой странице,
   // автоматически попадает в заказ, а не теряется молча.
@@ -62,6 +117,9 @@ export default function Cart({
   const [done, setDone] = useState<CheckoutResult | null>(null);
   // «Оформить заказ» opens a confirmation dialog first — no accidental orders.
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Массовое удаление тоже спрашивает подтверждение: промах по кнопке рядом
+  // с «Выбрать все» стоил бы клиенту всей набранной корзины.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // Способ оплаты / получения — уходят в 1С, в письмо менеджеру и в WhatsApp.
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [deliveryMethod, setDeliveryMethod] =
@@ -92,6 +150,24 @@ export default function Cart({
     })
       .then((r) => r.json())
       .then((d) => {
+        if (d?.warehouses) {
+          setWhOptions(d.warehouses);
+          // Единственный доступный склад выбирать незачем — проставляем сам;
+          // и снимаем выбор, который успел устареть (склад кончился).
+          const st = useCart.getState();
+          for (const i of st.items) {
+            const opts: { name: string }[] = d.warehouses[i.productId] ?? [];
+            if (opts.length === 1) {
+              if (i.warehouse !== opts[0].name)
+                st.setWarehouse(i.productId, opts[0].name);
+            } else if (
+              i.warehouse &&
+              !opts.some((o) => o.name === i.warehouse)
+            ) {
+              st.setWarehouse(i.productId, null);
+            }
+          }
+        }
         if (d?.prices) useCart.getState().updatePrices(d.prices);
       })
       .catch(() => {});
@@ -136,7 +212,11 @@ export default function Cart({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: selected.map((i) => ({ productId: i.productId, qty: i.qty })),
+          items: selected.map((i) => ({
+            productId: i.productId,
+            qty: i.qty,
+            warehouse: i.warehouse ?? null,
+          })),
           comment,
           paymentMethod,
           deliveryMethod,
@@ -290,6 +370,21 @@ export default function Cart({
   const total = cartSum(selected);
   const allChecked = selected.length === items.length;
   const noneChecked = selected.length === 0;
+  // Позиции, где склад ещё не выбран (а выбирать есть из чего). Пока такие
+  // есть, оформлять нельзя: иначе за клиента решил бы сервер, а заказ
+  // разъехался бы по документам 1С не туда, куда клиент рассчитывал.
+  const needWarehouse = selected.filter(
+    (i) => (whOptions[i.productId]?.length ?? 0) > 1 && !i.warehouse
+  );
+  // Склады, задействованные выбранными позициями: сколько их, столько
+  // документов уйдёт в 1С.
+  const usedWarehouses = [
+    ...new Set(
+      selected
+        .map((i) => i.warehouse ?? whOptions[i.productId]?.[0]?.name ?? null)
+        .filter((w): w is string => !!w)
+    ),
+  ];
   // «Выбрать все» / «Снять все» одной кнопкой — в корзине оптовика позиций
   // бывает много, и щёлкать каждую ради полного заказа бессмысленно.
   const toggleAll = () =>
@@ -322,18 +417,36 @@ export default function Cart({
         <div className="min-w-0">
           {/* Выбор позиций: оформить можно часть корзины, остальное
               останется на месте. Строка «выбрать все» общая для обоих видов. */}
-          <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-xs font-medium text-ink">
-            <input
-              type="checkbox"
-              checked={allChecked}
-              onChange={toggleAll}
-              className="h-4 w-4 shrink-0 accent-[#E53935]"
-            />
-            {allChecked ? "Снять выделение" : "Выбрать все"}
-            <span className="text-muted">
-              ({selected.length} из {items.length})
-            </span>
-          </label>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-xs font-medium text-ink">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={toggleAll}
+                className="h-4 w-4 shrink-0 accent-[#E53935]"
+              />
+              {allChecked ? "Снять выделение" : "Выбрать все"}
+              <span className="text-muted">
+                ({selected.length} из {items.length})
+              </span>
+            </label>
+            {/* Удалить отмеченные разом: чистить корзину по одной позиции
+                корзинкой в каждой строке было слишком долго. */}
+            <button
+              onClick={() => setConfirmDelete(true)}
+              disabled={noneChecked}
+              title={
+                noneChecked
+                  ? "Отметьте позиции, которые нужно убрать"
+                  : "Убрать отмеченные позиции из корзины"
+              }
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-2 text-xs font-medium text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-line disabled:hover:text-muted"
+            >
+              <Trash2 size={14} />
+              Удалить выбранное
+              {!noneChecked && <span>({selected.length})</span>}
+            </button>
+          </div>
 
           {/* Mobile: item cards (no horizontal scrolling) */}
           <div className="space-y-3 sm:hidden">
@@ -367,6 +480,13 @@ export default function Cart({
                           <div className="mt-0.5 text-[10px] font-semibold text-muted">
                             продаётся парами (шаг 2 шт)
                           </div>
+                        )}
+                        {(whOptions[i.productId]?.length ?? 0) > 1 && (
+                          <WarehousePicker
+                            options={whOptions[i.productId]}
+                            value={i.warehouse}
+                            onChange={(name) => setWarehouse(i.productId, name)}
+                          />
                         )}
                       </div>
                     </div>
@@ -489,6 +609,13 @@ export default function Cart({
                       <div className="mt-0.5 text-[10px] font-semibold text-muted">
                         продаётся парами (шаг 2 шт)
                       </div>
+                    )}
+                    {(whOptions[i.productId]?.length ?? 0) > 1 && (
+                      <WarehousePicker
+                        options={whOptions[i.productId]}
+                        value={i.warehouse}
+                        onChange={(name) => setWarehouse(i.productId, name)}
+                      />
                     )}
                   </td>
                   <td className="text-right">
@@ -682,10 +809,21 @@ export default function Cart({
               Отметьте товары, которые хотите заказать.
             </div>
           )}
+          {!noneChecked && needWarehouse.length > 0 && (
+            <div className="mb-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-800">
+              <WarehouseIcon size={14} className="mt-0.5 shrink-0" />
+              <span>
+                Выберите склад для {needWarehouse.length}{" "}
+                {needWarehouse.length === 1 ? "позиции" : "позиций"}:{" "}
+                {needWarehouse.map((i) => i.sku).join(", ")}. Товары с разных
+                складов уедут в 1С отдельными заказами.
+              </span>
+            </div>
+          )}
 
           <button
             onClick={() => setConfirmOpen(true)}
-            disabled={loading || noneChecked}
+            disabled={loading || noneChecked || needWarehouse.length > 0}
             className="btn-accent w-full"
           >
             {loading ? (
@@ -706,7 +844,11 @@ export default function Cart({
               (allChecked ? "" : ` из ${items.length} (остальные останутся в корзине)`) +
               `, сумма — ${formatTenge(total)}. ` +
               `Оплата: ${PAYMENT_LABELS[paymentMethod].toLowerCase()}, ` +
-              `получение: ${DELIVERY_LABELS[deliveryMethod].toLowerCase()}.`
+              `получение: ${DELIVERY_LABELS[deliveryMethod].toLowerCase()}.` +
+              // Разбивка по складам — не сюрприз: предупреждаем заранее.
+              (usedWarehouses.length > 1
+                ? ` Товары с разных складов (${usedWarehouses.join(", ")}) уйдут в 1С отдельными заказами.`
+                : "")
             }
             confirmLabel="Да"
             cancelLabel="Нет"
@@ -722,6 +864,23 @@ export default function Cart({
           >
             Очистить корзину
           </button>
+          <ConfirmDialog
+            open={confirmDelete}
+            title="Удалить из корзины"
+            text={
+              selected.length === items.length
+                ? `Убрать из корзины все позиции (${items.length})?`
+                : `Убрать из корзины отмеченные позиции: ${selected.length} из ${items.length}? Остальные останутся.`
+            }
+            confirmLabel="Удалить"
+            cancelLabel="Отмена"
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={() => {
+              removeMany(selected.map((i) => i.productId));
+              setUnchecked(new Set());
+              setConfirmDelete(false);
+            }}
+          />
         </div>
       </div>
     </div>
