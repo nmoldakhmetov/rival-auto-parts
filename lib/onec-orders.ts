@@ -49,18 +49,18 @@ const clean = (s?: string | null) => (s ?? "").replace(/\s+/g, " ").trim();
 
 export function buildOneCComment(opts: {
   pickup: boolean;
-  city?: string | null;
-  address?: string | null;
+  // Готовая строка адреса, выбранного клиентом при оформлении. Клиент
+  // выбирает из своих адресов (их может быть несколько), поэтому адрес
+  // приходит сюда уже собранным — см. lib/addresses.formatAddress.
+  deliveryAddress?: string | null;
   comment?: string | null;
 }): string {
   const parts: string[] = [];
   if (opts.pickup) {
     parts.push("Самовывоз");
   } else {
-    // «Казахстан, Алматинская область, Алматы» + «Жибек жолы 11»
-    const full = [clean(opts.city), clean(opts.address)]
-      .filter(Boolean)
-      .join(", ");
+    // «Казахстан, Алматинская область, Алматы, Жибек жолы 11»
+    const full = clean(opts.deliveryAddress);
     parts.push(full ? `Доставка, Адрес: ${full}` : "Доставка");
   }
   const note = clean(opts.comment);

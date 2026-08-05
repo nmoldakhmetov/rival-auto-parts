@@ -125,6 +125,13 @@ export default function Cart({
   const [deliveryMethod, setDeliveryMethod] =
     useState<DeliveryMethod>("DELIVERY");
 
+  // Адреса доставки клиента: их может быть несколько (склад, офис, точка
+  // выдачи), и в 1С уходит именно выбранный здесь.
+  const [addresses, setAddresses] = useState<
+    { id: string; label: string | null; city: string | null; address: string; isDefault: boolean }[]
+  >([]);
+  const [addressId, setAddressId] = useState("");
+
   const [giftRules, setGiftRules] = useState<GiftRule[]>([]);
   const [giftProducts, setGiftProducts] = useState<Record<string, CatalogRow>>(
     {}
@@ -169,6 +176,19 @@ export default function Cart({
           }
         }
         if (d?.prices) useCart.getState().updatePrices(d.prices);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/addresses")
+      .then((r) => r.json())
+      .then((d) => {
+        const list = d?.addresses ?? [];
+        setAddresses(list);
+        // По умолчанию — основной адрес, иначе первый в списке.
+        const preferred = list.find((a: { isDefault: boolean }) => a.isDefault) ?? list[0];
+        if (preferred) setAddressId(preferred.id);
       })
       .catch(() => {});
   }, []);
@@ -220,6 +240,8 @@ export default function Cart({
           comment,
           paymentMethod,
           deliveryMethod,
+          // Какой адрес выбрал клиент — именно он уедет в 1С.
+          addressId: deliveryMethod === "DELIVERY" ? addressId : null,
         }),
       });
       const data = await res.json();
@@ -752,11 +774,63 @@ export default function Cart({
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-[11px] leading-snug text-muted">
-                {deliveryMethod === "PICKUP"
-                  ? "Заберёте заказ на складе самостоятельно."
-                  : "Доставим по адресу из вашей карточки — уточнить его можно у менеджера."}
-              </p>
+              {deliveryMethod === "PICKUP" ? (
+                <p className="mt-1 text-[11px] leading-snug text-muted">
+                  Заберёте заказ на складе самостоятельно.
+                </p>
+              ) : addresses.length > 0 ? (
+                /* Адрес доставки — выбор из адресов клиента. Список ведёт
+                   менеджер, поэтому в 1С уезжает выверенный адрес. */
+                <div className="mt-2">
+                  <label className="mb-1 block text-[11px] font-semibold text-ink">
+                    Адрес доставки
+                  </label>
+                  {addresses.length === 1 ? (
+                    <div className="rounded-lg border border-line bg-gray-50 px-3 py-2 text-[11px] leading-snug text-ink">
+                      {[addresses[0].city, addresses[0].address]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {addresses.map((a) => (
+                        <label
+                          key={a.id}
+                          className={cx(
+                            "flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-[11px] leading-snug transition-colors",
+                            addressId === a.id
+                              ? "border-accent bg-accent/5 text-ink"
+                              : "border-line text-muted hover:border-accent/40"
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="delivery-address"
+                            checked={addressId === a.id}
+                            onChange={() => setAddressId(a.id)}
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#E53935]"
+                          />
+                          <span className="min-w-0">
+                            {a.label && (
+                              <span className="mr-1 font-semibold text-ink">
+                                {a.label}:
+                              </span>
+                            )}
+                            {[a.city, a.address].filter(Boolean).join(", ")}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-1 text-[11px] leading-snug text-muted">
+                    Новый адрес добавит ваш менеджер.
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-1 text-[11px] leading-snug text-muted">
+                  Адрес доставки не заполнен — обратитесь к вашему менеджеру.
+                </p>
+              )}
             </div>
           </div>
 

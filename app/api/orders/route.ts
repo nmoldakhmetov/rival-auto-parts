@@ -10,6 +10,7 @@ import {
   pickWarehouse,
   groupByWarehouse,
 } from "@/lib/order-warehouses";
+import { formatAddress } from "@/lib/addresses";
 import { buildOneCComment, sendOrderToOneC } from "@/lib/onec-orders";
 import { getActiveGiftRules } from "@/lib/gifts";
 import { earnedGiftQty } from "@/lib/gift-earn";
@@ -57,6 +58,8 @@ export async function POST(req: NextRequest) {
     comment?: string;
     paymentMethod?: string;
     deliveryMethod?: string;
+    // Какой из своих адресов клиент выбрал для доставки (ClientAddress.id).
+    addressId?: string;
   };
   try {
     body = await req.json();
@@ -190,6 +193,31 @@ export async function POST(req: NextRequest) {
     ? body.deliveryMethod
     : "DELIVERY";
 
+  // Адрес доставки: берём выбранный клиентом (проверив, что адрес его),
+  // иначе основной из списка, иначе — то, что записано в карточке. Строка
+  // сохраняется в заказе снимком: адрес в карточке потом поменяют, а в
+  // заказе должен остаться тот, по которому везли.
+  let deliveryAddress: string | null = null;
+  if (deliveryMethod === "DELIVERY") {
+    const chosen = body.addressId
+      ? await prisma.clientAddress.findFirst({
+          where: { id: String(body.addressId), userId: session.sub },
+          select: { city: true, address: true },
+        })
+      : null;
+    const fallback =
+      chosen ??
+      (await prisma.clientAddress.findFirst({
+        where: { userId: session.sub },
+        orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+        select: { city: true, address: true },
+      }));
+    deliveryAddress = fallback
+      ? formatAddress(fallback)
+      : formatAddress({ city: me?.city, address: me?.address });
+    if (!deliveryAddress) deliveryAddress = null;
+  }
+
   const order = await prisma.order.create({
     data: {
       userId: session.sub,
@@ -197,6 +225,7 @@ export async function POST(req: NextRequest) {
       comment: body.comment?.trim() || null,
       paymentMethod,
       deliveryMethod,
+      deliveryAddress,
       total,
       items: { create: orderItems },
     },
@@ -238,8 +267,7 @@ export async function POST(req: NextRequest) {
       // а в комментарии заказчику нужен только адрес и его собственный текст.
       comment: buildOneCComment({
         pickup: deliveryMethod === "PICKUP",
-        city: me?.city,
-        address: me?.address,
+        deliveryAddress,
         comment: body.comment,
       }),
       products: group.lines.map((l) => ({
@@ -339,8 +367,10 @@ export async function POST(req: NextRequest) {
       login: me?.login ?? "",
       email: me?.email ?? null,
       phone: me?.phone ?? null,
-      city: me?.city ?? null,
-      address: me?.address ?? null,
+      // В письме и в Telegram — адрес, ВЫБРАННЫЙ при оформлении, а не тот,
+      // что записан в карточке: у клиента адресов может быть несколько.
+      city: null,
+      address: deliveryAddress ?? formatAddress({ city: me?.city, address: me?.address }),
     },
     manager: manager
       ? { fullName: manager.fullName, email: manager.email }

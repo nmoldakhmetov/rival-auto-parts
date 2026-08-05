@@ -82,6 +82,9 @@ model User {
   // клиентов. Узнаётся через @userinfobot; менеджер обязан сам нажать /start
   // у бота, иначе Telegram запрещает боту писать первым.
   telegramId   String?
+  // Основной адрес карточки. Остаётся ради писем/1С и совместимости, но
+  // при оформлении клиент выбирает из списка ClientAddress (их может быть
+  // несколько: склад, офис, точка выдачи).
   address      String?
   city         String? // населённый пункт
   balance      Decimal @default(0) @db.Decimal(12, 2) // баланс (долг отражается отрицательным)
@@ -96,6 +99,7 @@ model User {
   clients   User[]  @relation("ManagerClients")
 
   warehouseAccess ClientWarehouseAccess[]
+  addresses       ClientAddress[]
   orders          Order[]
   searchLogs      SearchLog[]
   favorites       Favorite[]
@@ -231,6 +235,11 @@ model Order {
   editNote   String? // пояснение клиенту («не хватило на складе» и т.п.)
   editSeenAt DateTime? // когда клиент открыл «Мои заказы» после правки
 
+  // Адрес доставки, выбранный клиентом при оформлении (снимок строкой).
+  // У клиента их может быть несколько (ClientAddress), а адрес в карточке
+  // потом меняется — в заказе должен остаться тот, что выбрали.
+  deliveryAddress String?
+
   user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   items OrderItem[]
 
@@ -239,6 +248,25 @@ model Order {
 
   @@index([userId])
   @@index([status])
+}
+
+// Адреса доставки клиента. У оптовика их обычно несколько (склад, офис,
+// точка выдачи), и при оформлении он выбирает нужный — именно выбранный
+// уходит в 1С. Ведёт список персонал в карточке клиента.
+model ClientAddress {
+  id        String  @id @default(cuid())
+  userId    String
+  label     String? // как называть в списке: «Склад», «Офис на Абая»
+  city      String? // населённый пункт
+  address   String // улица, дом
+  isDefault Boolean @default(false) // подставляется в корзине по умолчанию
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model OrderItem {

@@ -30,6 +30,7 @@ import LocalityPicker from "@/components/admin/LocalityPicker";
 import DiscountPill, {
   type DiscountSummaryLite,
 } from "@/components/admin/DiscountPill";
+import AddressesEditor from "@/components/admin/AddressesEditor";
 import { toast } from "@/store/toast";
 
 type ClientRow = {
@@ -1063,6 +1064,12 @@ export default function ClientsManager({
                         <ClientDetails
                           client={c}
                           onSave={(body) => patch(c.id, body)}
+                        />
+                        {/* Адреса доставки: клиент выбирает из них при
+                            оформлении, в 1С уходит выбранный. */}
+                        <AddressesEditor
+                          clientId={c.id}
+                          canEdit={viewerRole !== "ACCOUNTANT"}
                         />
                       </div>
                     </td>
