@@ -247,6 +247,8 @@ export async function POST(req: NextRequest) {
         sku: l.sku,
         qty: l.qty,
         price: l.price,
+        // Дублируем склад в строке — 1С заполняет по нему «Со склада».
+        warehouse: l.warehouse,
       })),
     });
     onecResults.push({
