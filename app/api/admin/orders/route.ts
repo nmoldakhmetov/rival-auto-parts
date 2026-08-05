@@ -80,6 +80,8 @@ export async function GET(req: NextRequest) {
       orderNo: o.id.slice(-6).toUpperCase(),
       createdAt: o.createdAt,
       status: o.status,
+      // Состав правили после оформления — в списке это видно значком.
+      editedAt: o.editedAt,
       discountSummary: summaries.get(o.userId) ?? null,
       total: totalNum,
       paid: paidNum,

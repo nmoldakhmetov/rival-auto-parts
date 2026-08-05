@@ -14,6 +14,7 @@ import {
   PackageSearch,
   ImageOff,
   ExternalLink,
+  PencilLine,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatTenge, formatDateTime } from "@/lib/format";
@@ -40,6 +41,8 @@ type Row = {
   paid: number;
   debt: number;
   itemsCount: number;
+  // Состав правили после оформления (см. items/route.ts).
+  editedAt: string | null;
   client: { fullName: string; email: string | null; login: string } | null;
   // Текущая скидка/наценка клиента (lib/discount-summary).
   discountSummary: DiscountSummaryLite | null;
@@ -267,6 +270,8 @@ export default function OrdersAdmin() {
                 debt: countsAsDebtStatus(r.status)
                   ? (data.total ?? r.total) - r.paid
                   : 0,
+                // Значок «изменён» появляется сразу, не дожидаясь перезагрузки.
+                editedAt: new Date().toISOString(),
               }
             : r
         )
@@ -390,7 +395,19 @@ export default function OrdersAdmin() {
                     <ChevronDown size={15} />
                   </span>
                 </td>
-                <td className="font-bold text-ink">№{r.orderNo}</td>
+                <td className="font-bold text-ink">
+                  №{r.orderNo}
+                  {/* Состав правили после оформления — видно, не раскрывая
+                      заказ (та же пометка, что у клиента). */}
+                  {r.editedAt && (
+                    <span
+                      title={`Состав изменён ${formatDateTime(r.editedAt)}`}
+                      className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 align-middle text-[10px] font-bold leading-none text-amber-700"
+                    >
+                      <PencilLine size={10} /> изменён
+                    </span>
+                  )}
+                </td>
                 <td className="text-[11px] text-muted">
                   {formatDateTime(r.createdAt)}
                 </td>

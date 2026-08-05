@@ -31,8 +31,9 @@ export async function PATCH(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // Бухгалтер в заказах правит только оплату, состав — нет.
-  if (session.role === "ACCOUNTANT" || session.role === "CLIENT") {
+  // Состав правит любой сотрудник, у кого есть раздел «Заказы» (менеджеру
+  // ниже дополнительно проверяется, что клиент его). Клиент — никогда.
+  if (session.role === "CLIENT") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
