@@ -97,6 +97,10 @@ export function canAccessAdminPath(role: Role, pathname: string): boolean {
   if (!isStaff(role)) return false;
   // /api/admin/products = inline catalog edits (pin/badge).
   if (pathname.startsWith("/api/admin/products")) return canEditCatalog(role);
+  // /api/admin/warehouses = цвета складских плашек. Читать может любой
+  // сотрудник (каталог и так показывает эти плашки), менять — владелец;
+  // право на запись проверяет сам роут.
+  if (pathname.startsWith("/api/admin/warehouses")) return true;
   const section = sectionForPath(pathname);
   if (section) return canAccessSection(role, section);
   // Unknown admin path → allow staff (no specific rule), middleware still

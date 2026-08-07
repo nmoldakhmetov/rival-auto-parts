@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Truck } from "lucide-react";
 import { formatNum } from "@/lib/format";
 import type { StockCell } from "@/lib/types";
+import { colorByKey, defaultColorFor } from "@/lib/warehouse-colors";
 
 // Per-warehouse stock pills with a hover tooltip (delivery terms, admin-editable
 // via Setting `warehouse_tooltip`). The tooltip is rendered position:fixed so it
@@ -41,8 +42,11 @@ export default function StockBadges({
           onMouseEnter={show}
           onMouseLeave={() => setTip(null)}
           className={
+            // Цвет закреплён за складом и правится в админке: три одинаково
+            // зелёные плашки в строке было не различить с одного взгляда.
+            // Нулевой остаток всегда серый — это состояние, а не склад.
             (s.qty > 0
-              ? "border-green-200 bg-green-50 text-green-700"
+              ? colorByKey(s.color ?? defaultColorFor(s.warehouse)).badge
               : "border-line bg-gray-50 text-muted") +
             " badge border" +
             (tooltip ? " cursor-help" : "")

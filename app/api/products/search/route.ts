@@ -172,7 +172,7 @@ export async function GET(req: NextRequest) {
       where: allowedWhIds
         ? { warehouseId: { in: allowedWhIds } }
         : undefined,
-      include: { warehouse: { select: { name: true } } },
+      include: { warehouse: { select: { name: true, color: true } } },
       orderBy: { warehouse: { name: "asc" as const } },
     },
   };
@@ -333,7 +333,11 @@ export async function GET(req: NextRequest) {
   const isClient = session.role === "CLIENT";
   const rows: CatalogRow[] = products.map((p) => {
     const stocks = capStockForClient(
-      p.stocks.map((s) => ({ warehouse: s.warehouse.name, qty: s.qty })),
+      p.stocks.map((s) => ({
+        warehouse: s.warehouse.name,
+        qty: s.qty,
+        color: s.warehouse.color,
+      })),
       isClient
     );
     const analog = analogBySku.get(p.sku.toUpperCase());

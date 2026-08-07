@@ -59,7 +59,7 @@ export async function GET() {
       include: {
         stocks: {
           where: allowedWhIds ? { warehouseId: { in: allowedWhIds } } : undefined,
-          include: { warehouse: { select: { name: true } } },
+          include: { warehouse: { select: { name: true, color: true } } },
           orderBy: { warehouse: { name: "asc" } },
         },
       },
@@ -78,7 +78,11 @@ export async function GET() {
   const giftProducts: Record<string, CatalogRow> = {};
   for (const p of products) {
     const stocks = capStockForClient(
-      p.stocks.map((s) => ({ warehouse: s.warehouse.name, qty: s.qty })),
+      p.stocks.map((s) => ({
+        warehouse: s.warehouse.name,
+        qty: s.qty,
+        color: s.warehouse.color,
+      })),
       isClient
     );
     const dropActive =

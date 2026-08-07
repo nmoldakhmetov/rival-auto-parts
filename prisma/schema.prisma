@@ -175,6 +175,9 @@ model Product {
 model Warehouse {
   id   String @id @default(cuid())
   name String @unique // "БК склад", "Car City склад", ...
+  // Цвет складской плашки в каталоге (ключ из lib/warehouse-colors).
+  // null = цвет по умолчанию для этого склада.
+  color String?
 
   stocks       Stock[]
   clientAccess ClientWarehouseAccess[]

@@ -9,13 +9,13 @@ export const CLIENT_STOCK_CAP = 70;
 // clamped to the cap and flagged so the UI can render ">70". The real number
 // never leaves the server. Staff (isClient=false) get the cells unchanged.
 export function capStockForClient(
-  stocks: { warehouse: string; qty: number }[],
+  stocks: StockCell[],
   isClient: boolean
 ): StockCell[] {
   if (!isClient) return stocks;
   return stocks.map((s) =>
     s.qty > CLIENT_STOCK_CAP
-      ? { warehouse: s.warehouse, qty: CLIENT_STOCK_CAP, capped: true }
-      : { warehouse: s.warehouse, qty: s.qty }
+      ? { ...s, qty: CLIENT_STOCK_CAP, capped: true }
+      : { ...s }
   );
 }

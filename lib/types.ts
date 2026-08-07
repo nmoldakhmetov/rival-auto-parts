@@ -1,6 +1,13 @@
 // `capped` is set when the real quantity is hidden from a CLIENT (qty above
 // CLIENT_STOCK_CAP shows as ">70" instead of the exact number — see lib/stock).
-export type StockCell = { warehouse: string; qty: number; capped?: boolean };
+// `color` — ключ цвета плашки склада (lib/warehouse-colors), настраивается
+// в админке; пусто = цвет по умолчанию для этого склада.
+export type StockCell = {
+  warehouse: string;
+  qty: number;
+  capped?: boolean;
+  color?: string | null;
+};
 
 export type CatalogRow = {
   id: string;

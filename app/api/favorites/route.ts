@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
               where: allowedWhIds
                 ? { warehouseId: { in: allowedWhIds } }
                 : undefined,
-              include: { warehouse: { select: { name: true } } },
+              include: { warehouse: { select: { name: true, color: true } } },
               orderBy: { warehouse: { name: "asc" } },
             },
           },
@@ -71,7 +71,11 @@ export async function GET(req: NextRequest) {
     .map((f) => {
       const p = f.product;
       const stocks = capStockForClient(
-        p.stocks.map((s) => ({ warehouse: s.warehouse.name, qty: s.qty })),
+        p.stocks.map((s) => ({
+          warehouse: s.warehouse.name,
+          qty: s.qty,
+          color: s.warehouse.color,
+        })),
         session.role === "CLIENT"
       );
       const dropActive =
