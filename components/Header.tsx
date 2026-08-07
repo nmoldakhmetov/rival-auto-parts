@@ -160,16 +160,21 @@ export default function Header({ manager }: { manager?: Manager | null }) {
           title="На главную"
           className="flex min-w-0 flex-1 items-center justify-center"
         >
-          {/* Логотип белый на чёрном: mix-blend-multiply убирает чёрный фон
-              на светлой шапке (screen работает наоборот — на тёмной). */}
-          <Image
-            src="/logo-wide.jpg"
-            alt="Rival Auto"
-            width={190}
-            height={67}
-            priority
-            className="h-9 w-auto mix-blend-multiply"
-          />
+          {/* Логотип — белый на ЧЁРНОМ (jpg без прозрачности). На светлой
+              шапке он выглядел чужеродным чёрным прямоугольником, поэтому
+              подаём его как фирменную тёмную плашку: mix-blend-screen
+              растворяет чёрный фон картинки в чёрном фоне плашки, и остаётся
+              ровный логотип со скруглением. */}
+          <span className="flex h-10 items-center rounded-lg bg-ink px-3">
+            <Image
+              src="/logo-wide.jpg"
+              alt="Rival Auto"
+              width={190}
+              height={67}
+              priority
+              className="h-6 w-auto mix-blend-screen"
+            />
+          </span>
         </Link>
         <div className="shrink-0">
           <PhoneMenu manager={manager} open={open} setOpen={setOpen} compact />
@@ -196,7 +201,9 @@ export default function Header({ manager }: { manager?: Manager | null }) {
             // transition (а не transition-all): переходы только для цвета и
             // тени. С transition-all анимировался и padding-right, и текст
             // дёргался вправо в момент появления крестика.
-            "w-full rounded-lg border border-line bg-gray-50 py-2.5 pl-4 text-sm outline-none transition duration-200 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20",
+            // h-10 — как у кнопок рядом (бургер, корзина, телефон): при
+            // разной высоте строка шапки выглядела неровной.
+            "h-10 w-full rounded-lg border border-line bg-gray-50 pl-4 text-sm outline-none transition duration-200 focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/20",
             // Место справа: только под кнопку поиска в пустом поле, под
             // кнопку + крестик, когда есть что чистить.
             query === "" ? "pr-12" : "pr-[4.75rem]"
@@ -347,8 +354,10 @@ function PhoneMenu({
         onClick={() => setOpen((o) => !o)}
         aria-label="Контакты"
         className={cx(
-          "flex items-center gap-2 rounded-lg border border-line transition-all duration-200 hover:border-accent/40 hover:shadow-sm",
-          compact ? "h-10 px-2.5" : "px-3 py-2"
+          // h-10 в обоих видах — ровно по высоте поля поиска и соседних
+          // кнопок.
+          "flex h-10 items-center gap-2 rounded-lg border border-line transition-all duration-200 hover:border-accent/40 hover:shadow-sm",
+          compact ? "px-2.5" : "px-3"
         )}
       >
         <Phone size={16} className="text-accent" />
