@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { RotateCcw, Loader2 } from "lucide-react";
-import { useCart } from "@/store/cart";
+import { useCart, cartKey } from "@/store/cart";
 import { toast } from "@/store/toast";
 import { formatTenge } from "@/lib/format";
 import { isPairOnly } from "@/lib/pair-only";
@@ -55,7 +55,11 @@ export default function RepeatOrderButton({ items }: { items: OrderLine[] }) {
         }[];
       } = await res.json();
       const byId = new Map(data.rows.map((r) => [r.id, r]));
-      const inCart = new Map(cartItems.map((i) => [i.productId, i.qty]));
+      // Повтор кладёт товар без выбора склада — сервер подставит его сам,
+      // поэтому и сверяемся с позицией без склада.
+      const inCart = new Map(
+        cartItems.map((i) => [cartKey(i.productId, i.warehouse), i.qty])
+      );
 
       let added = 0;
       let skipped = missing;
@@ -66,10 +70,11 @@ export default function RepeatOrderButton({ items }: { items: OrderLine[] }) {
           skipped++;
           continue;
         }
-        const existing = inCart.get(p.id);
+        const key = cartKey(p.id, null);
+        const existing = inCart.get(key);
         if (existing != null) {
           // Already in the cart → bump to at least the ordered quantity.
-          if (line.qty > existing) setQty(p.id, line.qty);
+          if (line.qty > existing) setQty(key, line.qty);
         } else {
           add(
             {

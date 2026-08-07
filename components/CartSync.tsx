@@ -11,11 +11,18 @@ export default function CartSync({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     if (!enabled) return;
     const t = setTimeout(() => {
+      // Один товар может лежать в корзине двумя строками (с разных складов),
+      // а в снимке для админки строка на товар одна — складываем количества,
+      // иначе в PUT ушли бы дубли по productId.
+      const merged = new Map<string, number>();
+      for (const i of items) {
+        merged.set(i.productId, (merged.get(i.productId) ?? 0) + i.qty);
+      }
       fetch("/api/cart", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: items.map((i) => ({ productId: i.productId, qty: i.qty })),
+          items: [...merged].map(([productId, qty]) => ({ productId, qty })),
         }),
       }).catch(() => {});
     }, 800);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Loader2,
@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ZoomIn,
-  Replace,
   Heart,
   Pin,
   Star,
@@ -19,7 +18,7 @@ import {
   Gift,
   Maximize2,
 } from "lucide-react";
-import { useCart } from "@/store/cart";
+import { useCart, cartKey, itemKey } from "@/store/cart";
 import { useSearch } from "@/store/search";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
@@ -215,7 +214,9 @@ function ClampedText({
   className,
 }: {
   text: string;
-  lines: 1 | 2;
+  // До 4 строк: у товара с несколькими складами строка списка выше, и
+  // применяемости достаётся больше места.
+  lines: 1 | 2 | 3 | 4;
   className?: string;
 }) {
   const ref = useRef<HTMLParagraphElement>(null);
@@ -268,7 +269,13 @@ function ClampedText({
         }}
         className={cx(
           "cursor-help",
-          lines === 1 ? "line-clamp-1" : "line-clamp-2",
+          lines === 1
+            ? "line-clamp-1"
+            : lines === 2
+              ? "line-clamp-2"
+              : lines === 3
+                ? "line-clamp-3"
+                : "line-clamp-4",
           className
         )}
       >
@@ -424,10 +431,37 @@ export default function Catalog({
   const cartItems = useCart((s) => s.items);
   const add = useCart((s) => s.add);
   // productId → qty currently in the cart (drives the persistent "В корзине" state).
-  const cartQtyById = useMemo(
-    () => new Map(cartItems.map((i) => [i.productId, i.qty])),
+  // Ключ позиции (товар+склад) → количество в корзине. Один товар может
+  // лежать в корзине дважды — с разных складов.
+  const cartQtyByKey = useMemo(
+    () => new Map(cartItems.map((i) => [itemKey(i), i.qty])),
     [cartItems]
   );
+
+  // Строки заказа для товара: по одной на каждый доступный склад с остатком.
+  // Клиент заказывает СО СКЛАДА, поэтому у каждого своя цена, количество и
+  // кнопка корзины, а в корзину ложатся отдельные позиции. Если остатка нет
+  // нигде — одна строка без склада (кнопка будет неактивной).
+  const warehouseLines = (row: CatalogRow) => {
+    const inStock = row.stocks.filter((s) => s.qty > 0);
+    if (inStock.length === 0) {
+      return [{ key: cartKey(row.id, null), warehouse: null, stock: null }];
+    }
+    return inStock.map((s) => ({
+      key: cartKey(row.id, s.warehouse),
+      warehouse: s.warehouse,
+      stock: s,
+    }));
+  };
+
+  // Где вставить подпись «Аналоги»: сразу после блока точных совпадений.
+  // Показываем её, только если найденный товар реально есть в выдаче и за
+  // ним что-то следует — иначе подпись висела бы над пустотой.
+  const showAnalogsDivider = useMemo(() => {
+    if (!rows[0]?.exactMatch) return -1;
+    const idx = rows.findIndex((r) => !r.exactMatch);
+    return idx > 0 ? idx : -1;
+  }, [rows]);
 
   // Initialize filters from the URL (brand cards on the landing page link to
   // /catalog?make=…; the header may also pass ?q=…).
@@ -618,7 +652,11 @@ export default function Catalog({
     return () => clearTimeout(t);
   }, [query]);
 
-  function handleAdd(row: CatalogRow, qty?: number) {
+  function handleAdd(
+    row: CatalogRow,
+    warehouse: string | null,
+    qty?: number
+  ) {
     const pair = isPairOnly(row.category);
     add(
       {
@@ -631,6 +669,10 @@ export default function Catalog({
         discountPct: row.discountPct,
         imageUrl: row.imageUrl,
         pairOnly: pair,
+        // Склад выбирается здесь, в каталоге: у товара с остатком на
+        // нескольких складах своя кнопка на каждый склад, и в корзину
+        // ложатся отдельные строки.
+        warehouse,
       },
       qty ?? (pair ? PAIR_STEP : 1)
     );
@@ -1084,23 +1126,37 @@ export default function Catalog({
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => {
-                      const qtyInCart = cartQtyById.get(row.id) ?? 0;
+                    {rows.map((row, rowIdx) => {
                       // «Диски UIDNU»: строго парами — шаг и минимум 2 шт.
                       const pair = isPairOnly(row.category);
                       const step = pair ? PAIR_STEP : 1;
-                      // Locally picked qty (committed by «В корзину»); the
-                      // price cell multiplies by it live, same as the cards.
-                      const selQty = pickQty[row.id] ?? step;
+                      // Заказ идёт СО СКЛАДА: у товара с остатком на
+                      // нескольких доступных складах — свой блок «цена +
+                      // количество + корзина» на каждый склад. Нет остатка
+                      // нигде — одна строка без склада.
+                      const lines = warehouseLines(row);
                       return (
+                        <Fragment key={row.id}>
+                        {/* Найденный товар идёт первым, всё остальное — это
+                            аналоги и совпадения по тексту; отделяем их явной
+                            подписью, чтобы не путать с самим артикулом. */}
+                        {showAnalogsDivider === rowIdx && (
+                          <tr>
+                            <td
+                              colSpan={
+                                6 + (showActions ? 1 : 0) + (showAdminControls ? 1 : 0)
+                              }
+                              className="!py-1.5 !px-3 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-muted"
+                            >
+                              Аналоги
+                            </td>
+                          </tr>
+                        )}
                         <tr
-                          key={row.id}
-                          // Единая высота строки: раньше она зависела от длины
-                          // применяемости и числа складских плашек, и список
-                          // выглядел рваным. Высоты хватает на 2 строки текста
-                          // и 2 плашки склада.
+                          // Высота больше не фиксируется: у товара может быть
+                          // несколько складов, и строка растёт под них — заодно
+                          // применяемости достаётся больше места.
                           className={cx(
-                            "h-[92px] sm:h-auto",
                             row.exactMatch &&
                               "bg-accent/5 shadow-[inset_3px_0_0_0_#E53935]"
                           )}
@@ -1139,14 +1195,20 @@ export default function Catalog({
                               <span className="text-muted">—</span>
                             )}
                           </td>
-                          {/* line-clamp: без него строка растягивалась под
-                              длину применяемости и высота карточек в списке
-                              скакала от одной строки до пяти. */}
+                          {/* Применяемости дано больше строк: раньше её
+                              резало до двух ради ровной высоты списка, а
+                              высота всё равно теперь зависит от числа
+                              складов. Полный текст — в подсказке. */}
                           <td className="align-top">
                             {role === "CLIENT" ? (
                               <ClampedText
                                 text={row.fullName || row.sku}
-                                lines={2}
+                                lines={
+                                  Math.min(4, Math.max(2, lines.length + 1)) as
+                                    | 2
+                                    | 3
+                                    | 4
+                                }
                                 className="font-medium text-ink"
                               />
                             ) : (
@@ -1159,7 +1221,12 @@ export default function Catalog({
                                 {row.fullName && (
                                   <ClampedText
                                     text={row.fullName}
-                                    lines={2}
+                                    lines={
+                                  Math.min(4, Math.max(2, lines.length + 1)) as
+                                    | 2
+                                    | 3
+                                    | 4
+                                }
                                     className="text-[11px] leading-snug text-muted"
                                   />
                                 )}
@@ -1170,69 +1237,90 @@ export default function Catalog({
                                 <BadgeLabel badge={row.badge} />
                               </div>
                             )}
-                            {row.viaAnalog && (
-                              <div className="mt-1 inline-flex items-center gap-1 rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent-dark">
-                                <Replace size={10} /> Аналог:{" "}
-                                {row.viaAnalog.brand || "—"} ({row.viaAnalog.code}
-                                )
-                              </div>
-                            )}
                             <GiftBanner row={row} compact />
                           </td>
+                          {/* Наличие / цена / заказ — по строке на склад.
+                              Блоки одинаковой высоты, поэтому три колонки
+                              читаются как одна таблица внутри строки. */}
                           <td className="align-top">
-                            <div className="max-h-[52px] overflow-hidden sm:max-h-none">
-                              <StockBadges
-                                stocks={row.stocks}
-                                tooltip={whTooltip}
-                              />
-                            </div>
-                          </td>
-                          <td className="text-right font-semibold text-ink">
-                            {row.price > 0 ? (
-                              <>
-                                {row.discountPct > 0 &&
-                                  row.oldPrice != null && (
-                                    <div className="text-sm font-medium text-gray-400 line-through">
-                                      {formatTenge(row.oldPrice * selQty)}
-                                    </div>
-                                  )}
-                                <div className="flex items-center justify-end gap-1.5">
-                                  {formatTenge(row.price * selQty)}
-                                  {row.discountPct > 0 && (
-                                    <span className="whitespace-nowrap rounded-full bg-accent px-2 py-1 text-xs font-bold leading-none text-white">
-                                      {formatDiscount(
-                                        discountDisplay,
-                                        row.discountPct,
-                                        row.oldPrice != null
-                                          ? row.oldPrice * selQty
-                                          : row.oldPrice,
-                                        row.price * selQty
-                                      )}
+                            <div className="flex flex-col gap-1.5">
+                              {lines.map((ln) => (
+                                <div
+                                  key={ln.key}
+                                  className="flex min-h-[38px] items-center"
+                                >
+                                  {ln.stock ? (
+                                    <StockBadges
+                                      stocks={[ln.stock]}
+                                      tooltip={whTooltip}
+                                    />
+                                  ) : (
+                                    <span className="text-[11px] text-muted">
+                                      нет на складах
                                     </span>
                                   )}
                                 </div>
-                                {pair ? (
-                                  <div className="text-[10px] font-semibold text-muted">
-                                    цена за {selQty}шт
+                              ))}
+                            </div>
+                          </td>
+                          <td className="align-top text-right font-semibold text-ink">
+                            <div className="flex flex-col gap-1.5">
+                              {lines.map((ln) => {
+                                const q = pickQty[ln.key] ?? step;
+                                return (
+                                  <div
+                                    key={ln.key}
+                                    className="flex min-h-[38px] flex-col justify-center"
+                                  >
+                                    {row.price > 0 ? (
+                                      <>
+                                        {row.discountPct > 0 &&
+                                          row.oldPrice != null && (
+                                            <div className="text-xs font-medium text-gray-400 line-through">
+                                              {formatTenge(row.oldPrice * q)}
+                                            </div>
+                                          )}
+                                        <div className="flex items-center justify-end gap-1.5">
+                                          {formatTenge(row.price * q)}
+                                          {row.discountPct > 0 && (
+                                            <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                              {formatDiscount(
+                                                discountDisplay,
+                                                row.discountPct,
+                                                row.oldPrice != null
+                                                  ? row.oldPrice * q
+                                                  : row.oldPrice,
+                                                row.price * q
+                                              )}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {pair ? (
+                                          <div className="text-[10px] font-semibold text-muted">
+                                            цена за {q}шт
+                                          </div>
+                                        ) : q > 1 ? (
+                                          <div className="text-[10px] font-semibold text-muted">
+                                            за {q} шт
+                                          </div>
+                                        ) : null}
+                                      </>
+                                    ) : (
+                                      "—"
+                                    )}
                                   </div>
-                                ) : selQty > 1 ? (
-                                  <div className="text-[10px] font-semibold text-muted">
-                                    за {selQty} шт
-                                  </div>
-                                ) : null}
-                              </>
-                            ) : (
-                              "—"
-                            )}
+                                );
+                              })}
+                            </div>
                           </td>
                           {showActions && (
-                            <td>
-                              <div className="flex items-center gap-1">
+                            <td className="align-top">
+                              <div className="flex items-start gap-1">
                                 <button
                                   onClick={() => toggleFavorite(row.id)}
                                   title="В избранное"
                                   className={cx(
-                                    "flex h-8 w-8 items-center justify-center rounded border transition-colors",
+                                    "flex h-8 w-8 shrink-0 items-center justify-center rounded border transition-colors",
                                     favorites.has(row.id)
                                       ? "border-accent/30 bg-accent/10 text-accent"
                                       : "border-line text-muted hover:text-accent"
@@ -1245,20 +1333,31 @@ export default function Catalog({
                                     }
                                   />
                                 </button>
-                                <AddToCartPanel
-                                  qty={selQty}
-                                  step={step}
-                                  layout="row"
-                                  outOfStock={row.totalQty === 0}
-                                  inCartQty={qtyInCart}
-                                  onQtyChange={(n) =>
-                                    setPick(
-                                      row.id,
-                                      pair ? snapPairQty(n) : Math.max(1, n)
-                                    )
-                                  }
-                                  onAdd={(n) => handleAdd(row, n)}
-                                />
+                                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                                  {lines.map((ln) => (
+                                    <div
+                                      key={ln.key}
+                                      className="flex min-h-[38px] items-center"
+                                    >
+                                      <AddToCartPanel
+                                        qty={pickQty[ln.key] ?? step}
+                                        step={step}
+                                        layout="row"
+                                        outOfStock={!ln.stock}
+                                        inCartQty={cartQtyByKey.get(ln.key) ?? 0}
+                                        onQtyChange={(n) =>
+                                          setPick(
+                                            ln.key,
+                                            pair ? snapPairQty(n) : Math.max(1, n)
+                                          )
+                                        }
+                                        onAdd={(n) =>
+                                          handleAdd(row, ln.warehouse, n)
+                                        }
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             </td>
                           )}
@@ -1299,6 +1398,7 @@ export default function Catalog({
                             </td>
                           )}
                         </tr>
+                        </Fragment>
                       );
                     })}
                   </tbody>
@@ -1310,20 +1410,28 @@ export default function Catalog({
               // за раз было видно от силы полторы позиции.
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
                 {rows.map((row, i) => {
-                  const qtyInCart = cartQtyById.get(row.id) ?? 0;
                   const pct = row.discountPct;
                   const oldP = row.oldPrice;
                   // «Диски UIDNU»: строго парами — шаг и минимум 2 шт.
                   const pair = isPairOnly(row.category);
                   const step = pair ? PAIR_STEP : 1;
-                  // Locally picked qty (committed by «В корзину»); the card
-                  // price below multiplies by it live.
-                  const selQty = pickQty[row.id] ?? step;
+                  // По блоку заказа на каждый доступный склад.
+                  const lines = warehouseLines(row);
                   const desc =
                     row.fullName || (role === "CLIENT" ? "" : row.name);
                   return (
+                    <Fragment key={row.id}>
+                    {/* Разделитель на всю ширину сетки: выше — найденный
+                        товар, ниже — аналоги и прочие совпадения. */}
+                    {showAnalogsDivider === i && (
+                      <div className="col-span-full -mb-1 mt-1 flex items-center gap-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                          Аналоги
+                        </span>
+                        <span className="h-px flex-1 bg-line" />
+                      </div>
+                    )}
                     <div
-                      key={row.id}
                       style={{ animationDelay: `${Math.min(i, 11) * 25}ms` }}
                       className={cx(
                         "animate-fade-in-up group relative flex flex-col rounded-xl border transition-all duration-200 hover:z-10 hover:shadow-lg",
@@ -1397,71 +1505,98 @@ export default function Catalog({
                             />
                           </div>
                         )}
-                        {row.viaAnalog && (
-                          <div className="mt-1.5 inline-flex w-fit items-center gap-1 rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent-dark">
-                            <Replace size={10} /> Аналог:{" "}
-                            {row.viaAnalog.brand || "—"}
-                          </div>
-                        )}
-
-                        <div className="mt-2.5">
-                          <StockBadges stocks={row.stocks} tooltip={whTooltip} />
-                        </div>
-
                         <GiftBanner row={row} />
 
+                        {/* Блок заказа — по одному на склад. Каждый склад
+                            получает свою цену, количество и кнопку: заказ
+                            идёт СО СКЛАДА, и в корзину ложатся отдельные
+                            позиции. Один склад — привычный вид без лишней
+                            обвязки, несколько — карточки складов. */}
                         <div className="mt-auto pt-2 sm:pt-3">
-                          {row.price > 0 ? (
-                            <div className="mb-2 sm:mb-2.5">
-                              {pct > 0 && oldP != null && (
-                                <div className="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                  <span className="text-xs font-medium text-gray-400 line-through sm:text-base">
-                                    {formatTenge(oldP * selQty)}
-                                  </span>
-                                  <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white sm:px-2 sm:py-1 sm:text-xs">
-                                    {formatDiscount(
-                                      discountDisplay,
-                                      pct,
-                                      oldP * selQty,
-                                      row.price * selQty
-                                    )}
-                                  </span>
+                          {lines.map((ln, lnIdx) => {
+                            const q = pickQty[ln.key] ?? step;
+                            return (
+                              <div
+                                key={ln.key}
+                                className={cx(
+                                  lines.length > 1 &&
+                                    "rounded-lg border border-line p-2 sm:p-2.5",
+                                  lines.length > 1 && lnIdx > 0 && "mt-2"
+                                )}
+                              >
+                                <div className="mb-1.5">
+                                  {ln.stock ? (
+                                    <StockBadges
+                                      stocks={[ln.stock]}
+                                      tooltip={whTooltip}
+                                    />
+                                  ) : (
+                                    <span className="text-[11px] text-muted">
+                                      нет на складах
+                                    </span>
+                                  )}
                                 </div>
-                              )}
-                              <div className="text-base font-extrabold text-ink sm:text-xl">
-                                {formatTenge(row.price * selQty)}
-                                {pair ? (
-                                  <span className="ml-1 text-[10px] font-semibold text-muted sm:ml-1.5 sm:text-xs">
-                                    цена за {selQty}шт
-                                  </span>
-                                ) : selQty > 1 ? (
-                                  <span className="ml-1 text-[10px] font-semibold text-muted sm:ml-1.5 sm:text-xs">
-                                    за {selQty} шт
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="mb-2 text-xs font-semibold text-muted sm:mb-2.5 sm:text-sm">
-                              Цена по запросу
-                            </div>
-                          )}
+                                {row.price > 0 ? (
+                                  <div className="mb-2 sm:mb-2.5">
+                                    {pct > 0 && oldP != null && (
+                                      <div className="mb-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                        <span className="text-xs font-medium text-gray-400 line-through sm:text-sm">
+                                          {formatTenge(oldP * q)}
+                                        </span>
+                                        <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                          {formatDiscount(
+                                            discountDisplay,
+                                            pct,
+                                            oldP * q,
+                                            row.price * q
+                                          )}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div
+                                      className={cx(
+                                        "font-extrabold text-ink",
+                                        lines.length > 1
+                                          ? "text-sm sm:text-lg"
+                                          : "text-base sm:text-xl"
+                                      )}
+                                    >
+                                      {formatTenge(row.price * q)}
+                                      {pair ? (
+                                        <span className="ml-1 text-[10px] font-semibold text-muted sm:ml-1.5 sm:text-xs">
+                                          цена за {q}шт
+                                        </span>
+                                      ) : q > 1 ? (
+                                        <span className="ml-1 text-[10px] font-semibold text-muted sm:ml-1.5 sm:text-xs">
+                                          за {q} шт
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mb-2 text-xs font-semibold text-muted sm:mb-2.5 sm:text-sm">
+                                    Цена по запросу
+                                  </div>
+                                )}
 
-                          {showActions && (
-                            <AddToCartPanel
-                              qty={selQty}
-                              step={step}
-                              outOfStock={row.totalQty === 0}
-                              inCartQty={qtyInCart}
-                              onQtyChange={(n) =>
-                                setPick(
-                                  row.id,
-                                  pair ? snapPairQty(n) : Math.max(1, n)
-                                )
-                              }
-                              onAdd={(n) => handleAdd(row, n)}
-                            />
-                          )}
+                                {showActions && (
+                                  <AddToCartPanel
+                                    qty={q}
+                                    step={step}
+                                    outOfStock={!ln.stock}
+                                    inCartQty={cartQtyByKey.get(ln.key) ?? 0}
+                                    onQtyChange={(n) =>
+                                      setPick(
+                                        ln.key,
+                                        pair ? snapPairQty(n) : Math.max(1, n)
+                                      )
+                                    }
+                                    onAdd={(n) => handleAdd(row, ln.warehouse, n)}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
                           {showAdminControls && (
                             <div className="mt-3 flex items-center gap-2 border-t border-line pt-2">
                               <button
@@ -1497,6 +1632,7 @@ export default function Catalog({
                         </div>
                       </div>
                     </div>
+                    </Fragment>
                   );
                 })}
               </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Trash2,
   ShoppingCart,
@@ -12,9 +13,12 @@ import {
   TriangleAlert,
   Gift,
   Info,
+  ImageOff,
+  Maximize2,
+  X,
   Warehouse as WarehouseIcon,
 } from "lucide-react";
-import { useCart, cartSum } from "@/store/cart";
+import { useCart, cartSum, itemKey, type CartItem } from "@/store/cart";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import type { CatalogRow } from "@/lib/types";
 import { earnedGiftQty, type GiftRuleLite as GiftRule } from "@/lib/gift-earn";
@@ -32,51 +36,44 @@ import {
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
-// Выбор склада для позиции. Показывается, только когда складов с остатком
-// больше одного: при единственном складе выбирать не из чего, и сервер
-// проставляет его сам. Заказ уходит в 1С отдельным документом на каждый
-// склад, поэтому выбор обязателен — без него оформление заблокировано.
-function WarehousePicker({
-  options,
-  value,
-  onChange,
+// Миниатюра товара в корзине. Клик РАСКРЫВАЕТ картинку, а не уводит на
+// страницу товара: до этого фото в корзине не было вовсе и клиент не мог
+// проверить, то ли он положил. Переход в каталог — по артикулу рядом.
+function CartThumb({
+  item,
+  onOpen,
 }: {
-  options: { name: string; qty: number; capped?: boolean }[];
-  value?: string | null;
-  onChange: (name: string) => void;
+  item: CartItem;
+  onOpen: (src: string) => void;
 }) {
+  const src = item.imageUrl
+    ? `/api/image?u=${encodeURIComponent(item.imageUrl)}`
+    : null;
+  if (!src) {
+    return (
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-line bg-gray-50 text-gray-300">
+        <ImageOff size={15} />
+      </div>
+    );
+  }
   return (
-    <div className="mt-1.5">
-      <div
-        className={cx(
-          "mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide",
-          value ? "text-muted" : "text-accent"
-        )}
-      >
-        <WarehouseIcon size={11} />
-        {value ? "Склад" : "Выберите склад"}
-      </div>
-      <div className="flex flex-wrap gap-1">
-        {options.map((o) => (
-          <button
-            key={o.name}
-            type="button"
-            onClick={() => onChange(o.name)}
-            className={cx(
-              "rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
-              value === o.name
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-line bg-white text-muted hover:border-accent/40 hover:text-ink"
-            )}
-          >
-            {o.name}
-            <span className="ml-1 text-[10px] opacity-70">
-              {o.capped ? `>${o.qty}` : o.qty} шт
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={() => onOpen(src)}
+      title="Посмотреть фото"
+      className="group/th relative h-11 w-11 shrink-0 overflow-hidden rounded border border-line bg-white"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={item.sku}
+        loading="lazy"
+        className="h-full w-full object-contain"
+      />
+      <span className="absolute inset-0 hidden items-center justify-center bg-ink/40 text-white group-hover/th:flex">
+        <Maximize2 size={14} />
+      </span>
+    </button>
   );
 }
 
@@ -91,14 +88,14 @@ export default function Cart({
 }: {
   discountDisplay?: string;
 }) {
-  const { items, setQty, remove, removeMany, setWarehouse, clear } = useCart();
+  const router = useRouter();
+  const { items, setQty, remove, removeMany, clear } = useCart();
   const [mounted, setMounted] = useState(false);
-  // Склады, доступные клиенту по каждой позиции (из /api/cart/reprice).
-  // Если их больше одного — клиент выбирает, с какого заказывать: заказ
-  // уходит в 1С отдельным документом на каждый склад.
-  const [whOptions, setWhOptions] = useState<
-    Record<string, { name: string; qty: number; capped?: boolean }[]>
-  >({});
+  // Просмотр фото прямо в корзине — картинка на весь экран, без ухода со
+  // страницы (страницы товара в портале нет, есть каталог по артикулу).
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const openInCatalog = (sku: string) =>
+    router.push(`/catalog?q=${encodeURIComponent(sku)}`);
   // Выбор позиций для оформления. Храним СНЯТЫЕ галочки, а не поставленные:
   // по умолчанию выбрано всё, и товар, добавленный уже на этой странице,
   // автоматически попадает в заказ, а не теряется молча.
@@ -157,24 +154,6 @@ export default function Cart({
     })
       .then((r) => r.json())
       .then((d) => {
-        if (d?.warehouses) {
-          setWhOptions(d.warehouses);
-          // Единственный доступный склад выбирать незачем — проставляем сам;
-          // и снимаем выбор, который успел устареть (склад кончился).
-          const st = useCart.getState();
-          for (const i of st.items) {
-            const opts: { name: string }[] = d.warehouses[i.productId] ?? [];
-            if (opts.length === 1) {
-              if (i.warehouse !== opts[0].name)
-                st.setWarehouse(i.productId, opts[0].name);
-            } else if (
-              i.warehouse &&
-              !opts.some((o) => o.name === i.warehouse)
-            ) {
-              st.setWarehouse(i.productId, null);
-            }
-          }
-        }
         if (d?.prices) useCart.getState().updatePrices(d.prices);
       })
       .catch(() => {});
@@ -210,13 +189,18 @@ export default function Cart({
   // Всё, что дальше считается и оформляется, берётся ТОЛЬКО из отмеченных
   // позиций: и «Итого», и подарки, и состав заказа.
   const selected = useMemo(
-    () => items.filter((i) => !unchecked.has(i.productId)),
+    () => items.filter((i) => !unchecked.has(itemKey(i))),
     [items, unchecked]
   );
 
   const earnedGifts = useMemo(() => {
     if (giftRules.length === 0) return [] as { row: CatalogRow; qty: number }[];
-    const qtyById = new Map(selected.map((i) => [i.productId, i.qty]));
+    // Подарки считаются от общего количества товара: если он взят с двух
+    // складов, для правила это по-прежнему один товар и сумма штук.
+    const qtyById = new Map<string, number>();
+    for (const i of selected) {
+      qtyById.set(i.productId, (qtyById.get(i.productId) ?? 0) + i.qty);
+    }
     const earned = earnedGiftQty(giftRules, qtyById);
     return [...earned.entries()]
       .map(([id, qty]) => ({ row: giftProducts[id], qty }))
@@ -227,7 +211,7 @@ export default function Cart({
     setError(null);
     setLoading(true);
     try {
-      const ordered = selected.map((i) => i.productId);
+      const ordered = selected.map((i) => itemKey(i));
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -395,13 +379,10 @@ export default function Cart({
   // Позиции, где склад ещё не выбран (а выбирать есть из чего). Пока такие
   // есть, оформлять нельзя: иначе за клиента решил бы сервер, а заказ
   // разъехался бы по документам 1С не туда, куда клиент рассчитывал.
-  const needWarehouse = selected.filter(
-    (i) => (whOptions[i.productId]?.length ?? 0) > 1 && !i.warehouse
-  );
   // «Выбрать все» / «Снять все» одной кнопкой — в корзине оптовика позиций
   // бывает много, и щёлкать каждую ради полного заказа бессмысленно.
   const toggleAll = () =>
-    setUnchecked(allChecked ? new Set(items.map((i) => i.productId)) : new Set());
+    setUnchecked(allChecked ? new Set(items.map((i) => itemKey(i))) : new Set());
 
   // Total saved on 1С promo drops — shown in the summary when > 0. Derived
   // from the promo % only, so the personal discount stays invisible.
@@ -465,12 +446,13 @@ export default function Cart({
           <div className="space-y-3 sm:hidden">
             {items.map((i) => {
               const step = i.pairOnly ? 2 : 1;
+              const key = itemKey(i);
               return (
                 <div
-                  key={`m-${i.productId}`}
+                  key={`m-${key}`}
                   className={cx(
                     "rounded-lg border bg-white p-3 transition-colors",
-                    isChecked(i.productId)
+                    isChecked(key)
                       ? "border-line"
                       : "border-dashed border-gray-300 bg-gray-50/60"
                   )}
@@ -479,13 +461,22 @@ export default function Cart({
                     <div className="flex min-w-0 items-start gap-2.5">
                       <input
                         type="checkbox"
-                        checked={isChecked(i.productId)}
-                        onChange={() => toggleOne(i.productId)}
+                        checked={isChecked(key)}
+                        onChange={() => toggleOne(key)}
                         aria-label={`Выбрать ${i.sku} для оформления`}
                         className="mt-0.5 h-4 w-4 shrink-0 accent-[#E53935]"
                       />
+                      {/* Фото: клик открывает картинку, а не уводит со
+                          страницы — по артикулу ниже переход в каталог. */}
+                      <CartThumb item={i} onOpen={setLightboxSrc} />
                       <div className="min-w-0">
-                        <div className="font-semibold text-ink">{i.sku}</div>
+                        <button
+                          onClick={() => openInCatalog(i.sku)}
+                          title={`Открыть ${i.sku} в каталоге`}
+                          className="text-left font-semibold text-ink hover:text-accent"
+                        >
+                          {i.sku}
+                        </button>
                         <div className="line-clamp-2 text-[11px] text-muted">
                           {i.name}
                         </div>
@@ -494,17 +485,15 @@ export default function Cart({
                             продаётся парами (шаг 2 шт)
                           </div>
                         )}
-                        {(whOptions[i.productId]?.length ?? 0) > 1 && (
-                          <WarehousePicker
-                            options={whOptions[i.productId]}
-                            value={i.warehouse}
-                            onChange={(name) => setWarehouse(i.productId, name)}
-                          />
+                        {i.warehouse && (
+                          <div className="mt-1 inline-flex items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                            <WarehouseIcon size={10} /> {i.warehouse}
+                          </div>
                         )}
                       </div>
                     </div>
                     <button
-                      onClick={() => remove(i.productId)}
+                      onClick={() => remove(key)}
                       title="Убрать из корзины"
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-accent/10 hover:text-accent"
                     >
@@ -542,8 +531,8 @@ export default function Cart({
                       <CartQtySelector
                         qty={i.qty}
                         step={step}
-                        onSet={(n) => setQty(i.productId, n)}
-                        onRemove={() => remove(i.productId)}
+                        onSet={(n) => setQty(key, n)}
+                        onRemove={() => remove(key)}
                       />
                     </div>
                     <div className="text-right font-bold text-ink">
@@ -589,6 +578,7 @@ export default function Cart({
                     className="h-4 w-4 accent-[#E53935]"
                   />
                 </th>
+                <th className="w-14">Фото</th>
                 <th>Товар</th>
                 <th className="w-28 text-right">Цена</th>
                 <th className="w-36 text-center">Кол-во</th>
@@ -601,34 +591,41 @@ export default function Cart({
                 // Pair-only goods (диски UIDNU) step by 2 — the store snaps
                 // any odd value, the buttons move a full pair at a time.
                 const step = i.pairOnly ? 2 : 1;
+                const key = itemKey(i);
                 return (
-                <tr
-                  key={i.productId}
-                  className={cx(!isChecked(i.productId) && "bg-gray-50/70")}
-                >
+                <tr key={key} className={cx(!isChecked(key) && "bg-gray-50/70")}>
                   <td>
                     <input
                       type="checkbox"
-                      checked={isChecked(i.productId)}
-                      onChange={() => toggleOne(i.productId)}
+                      checked={isChecked(key)}
+                      onChange={() => toggleOne(key)}
                       aria-label={`Выбрать ${i.sku} для оформления`}
                       className="h-4 w-4 accent-[#E53935]"
                     />
                   </td>
+                  {/* Фото открывается на просмотр; уводит в каталог только
+                      клик по артикулу. */}
                   <td>
-                    <div className="font-semibold text-ink">{i.sku}</div>
+                    <CartThumb item={i} onOpen={setLightboxSrc} />
+                  </td>
+                  <td>
+                    <button
+                      onClick={() => openInCatalog(i.sku)}
+                      title={`Открыть ${i.sku} в каталоге`}
+                      className="text-left font-semibold text-ink hover:text-accent"
+                    >
+                      {i.sku}
+                    </button>
                     <div className="text-[11px] text-muted">{i.name}</div>
                     {i.pairOnly && (
                       <div className="mt-0.5 text-[10px] font-semibold text-muted">
                         продаётся парами (шаг 2 шт)
                       </div>
                     )}
-                    {(whOptions[i.productId]?.length ?? 0) > 1 && (
-                      <WarehousePicker
-                        options={whOptions[i.productId]}
-                        value={i.warehouse}
-                        onChange={(name) => setWarehouse(i.productId, name)}
-                      />
+                    {i.warehouse && (
+                      <div className="mt-1 inline-flex items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                        <WarehouseIcon size={10} /> {i.warehouse}
+                      </div>
                     )}
                   </td>
                   <td className="text-right">
@@ -664,8 +661,8 @@ export default function Cart({
                       <CartQtySelector
                         qty={i.qty}
                         step={step}
-                        onSet={(n) => setQty(i.productId, n)}
-                        onRemove={() => remove(i.productId)}
+                        onSet={(n) => setQty(key, n)}
+                        onRemove={() => remove(key)}
                       />
                     </div>
                   </td>
@@ -674,7 +671,7 @@ export default function Cart({
                   </td>
                   <td>
                     <button
-                      onClick={() => remove(i.productId)}
+                      onClick={() => remove(key)}
                       className="flex h-7 w-7 items-center justify-center rounded text-muted hover:bg-accent/10 hover:text-accent"
                     >
                       <Trash2 size={15} />
@@ -874,20 +871,9 @@ export default function Cart({
               Отметьте товары, которые хотите заказать.
             </div>
           )}
-          {!noneChecked && needWarehouse.length > 0 && (
-            <div className="mb-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-800">
-              <WarehouseIcon size={14} className="mt-0.5 shrink-0" />
-              <span>
-                Выберите склад для {needWarehouse.length}{" "}
-                {needWarehouse.length === 1 ? "позиции" : "позиций"}:{" "}
-                {needWarehouse.map((i) => i.sku).join(", ")}.
-              </span>
-            </div>
-          )}
-
           <button
             onClick={() => setConfirmOpen(true)}
-            disabled={loading || noneChecked || needWarehouse.length > 0}
+            disabled={loading || noneChecked}
             className="btn-accent w-full"
           >
             {loading ? (
@@ -936,13 +922,36 @@ export default function Cart({
             cancelLabel="Отмена"
             onCancel={() => setConfirmDelete(false)}
             onConfirm={() => {
-              removeMany(selected.map((i) => i.productId));
+              removeMany(selected.map((i) => itemKey(i)));
               setUnchecked(new Set());
               setConfirmDelete(false);
             }}
           />
         </div>
       </div>
+
+      {/* Фото товара во весь экран — тот же лайтбокс, что в каталоге. */}
+      {lightboxSrc && (
+        <div
+          onClick={() => setLightboxSrc(null)}
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4"
+        >
+          <button
+            onClick={() => setLightboxSrc(null)}
+            aria-label="Закрыть"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          >
+            <X size={20} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxSrc}
+            alt=""
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-full max-w-full rounded-lg bg-white object-contain"
+          />
+        </div>
+      )}
     </div>
   );
 }
