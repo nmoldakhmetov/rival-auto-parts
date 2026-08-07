@@ -144,37 +144,33 @@ export default function Header({ manager }: { manager?: Manager | null }) {
     // поиск, уведомления и корзина. С домашнего экрана боковое меню скрыто,
     // и без логотипа-ссылки вернуться на главную было нечем.
     // На lg+ всё складывается обратно в одну строку — там есть сайдбар.
-    <header className="z-30 flex shrink-0 flex-col gap-2 border-b border-line bg-white px-3 py-2.5 shadow-sm lg:flex-row lg:items-center lg:gap-3 lg:px-6 lg:py-3">
-      {/* Верхняя строка — только для телефона/планшета. */}
-      <div className="flex items-center gap-2 lg:hidden">
+    <header className="z-30 flex shrink-0 flex-col border-b border-line bg-white shadow-sm lg:flex-row lg:items-center lg:gap-3 lg:px-6 lg:py-3">
+      {/* Верхняя строка (только телефон/планшет) — фирменная тёмная полоса
+          во всю ширину: логотип белый на чёрном, и на тёмном фоне он живёт
+          естественно (mix-blend-screen растворяет чёрный фон картинки).
+          Кнопки по краям белые — на тёмном они читаются лучше всего. */}
+      <div className="flex items-center gap-3 bg-ink px-3 py-2.5 lg:hidden">
         <button
           onClick={() => setSidebarOpen(true)}
           title="Меню"
           aria-label="Открыть меню"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink transition-all duration-200 hover:border-accent/40 hover:text-accent"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-ink shadow-sm transition-transform duration-200 active:scale-95"
         >
-          <Menu size={19} />
+          <Menu size={20} />
         </button>
         <Link
           href="/"
           title="На главную"
           className="flex min-w-0 flex-1 items-center justify-center"
         >
-          {/* Логотип — белый на ЧЁРНОМ (jpg без прозрачности). На светлой
-              шапке он выглядел чужеродным чёрным прямоугольником, поэтому
-              подаём его как фирменную тёмную плашку: mix-blend-screen
-              растворяет чёрный фон картинки в чёрном фоне плашки, и остаётся
-              ровный логотип со скруглением. */}
-          <span className="flex h-10 items-center rounded-lg bg-ink px-3">
-            <Image
-              src="/logo-wide.jpg"
-              alt="Rival Auto"
-              width={190}
-              height={67}
-              priority
-              className="h-6 w-auto mix-blend-screen"
-            />
-          </span>
+          <Image
+            src="/logo-wide.jpg"
+            alt="Rival Auto"
+            width={190}
+            height={67}
+            priority
+            className="h-8 w-auto mix-blend-screen"
+          />
         </Link>
         <div className="shrink-0">
           <PhoneMenu manager={manager} open={open} setOpen={setOpen} compact />
@@ -182,7 +178,7 @@ export default function Header({ manager }: { manager?: Manager | null }) {
       </div>
 
       {/* Нижняя строка на телефоне / единственная на десктопе. */}
-      <div className="flex items-center gap-2 lg:contents">
+      <div className="flex items-center gap-2 px-3 py-2.5 lg:contents">
 
       {/* Global search. Кнопка-лупа живёт ВНУТРИ поля у правого края (как у
           Ozon/Amazon) — одинаково на телефоне, десктопе и в PWA. */}
@@ -355,9 +351,12 @@ function PhoneMenu({
         aria-label="Контакты"
         className={cx(
           // h-10 в обоих видах — ровно по высоте поля поиска и соседних
-          // кнопок.
-          "flex h-10 items-center gap-2 rounded-lg border border-line transition-all duration-200 hover:border-accent/40 hover:shadow-sm",
-          compact ? "px-2.5" : "px-3"
+          // кнопок. compact — вариант для тёмной полосы на телефоне: белая
+          // кнопка без рамки, как бургер напротив.
+          "flex h-10 items-center gap-1.5 transition-all duration-200",
+          compact
+            ? "rounded-xl bg-white px-3 text-ink shadow-sm active:scale-95"
+            : "gap-2 rounded-lg border border-line px-3 hover:border-accent/40 hover:shadow-sm"
         )}
       >
         <Phone size={16} className="text-accent" />
