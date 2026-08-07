@@ -6,15 +6,38 @@ import {
   duplicateRuleMessage,
 } from "@/lib/discount-rules";
 import { invalidatePrefix } from "@/lib/cache";
+import { getSession } from "@/lib/auth";
+import { managerOwnsClient } from "@/lib/admin-scope";
 
 export const dynamic = "force-dynamic";
 
-// Access restricted to ADMIN by middleware (/api/admin/*).
+// Секцию открывает middleware (/api/admin/*), но этого мало: менеджер имеет
+// к ней доступ и по id мог править ЧУЖИЕ правила, включая общие «всем
+// клиентам». Поэтому здесь проверяем владение правилом.
+async function managerMayTouch(ruleId: string) {
+  const session = await getSession();
+  if (!session || session.role !== "MANAGER") return null;
+  const rule = await prisma.discountRule.findUnique({
+    where: { id: ruleId },
+    select: { userId: true },
+  });
+  if (!rule) return { error: "Скидка не найдена", status: 404 as const };
+  // Общие правила (userId = null) менеджеру недоступны — их ставит владелец.
+  if (!rule.userId || !(await managerOwnsClient(session, rule.userId))) {
+    return { error: "Можно менять скидки только своих клиентов", status: 403 as const };
+  }
+  return null;
+}
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const denied = await managerMayTouch(params.id);
+  if (denied) {
+    return NextResponse.json({ error: denied.error }, { status: denied.status });
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -82,6 +105,11 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const denied = await managerMayTouch(params.id);
+  if (denied) {
+    return NextResponse.json({ error: denied.error }, { status: denied.status });
+  }
+
   try {
     await prisma.discountRule.delete({ where: { id: params.id } });
   } catch {

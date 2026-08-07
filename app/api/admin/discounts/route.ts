@@ -16,7 +16,17 @@ export const dynamic = "force-dynamic";
 // Access restricted to ADMIN by middleware (/api/admin/*).
 
 export async function GET() {
+  const session = await getSession();
+  // Менеджер видит скидки ТОЛЬКО своих клиентов: чужие правила (и общие
+  // «всем клиентам») ему не показываем — он всё равно не может их менять,
+  // а в списке они лишь путали.
+  const where =
+    session?.role === "MANAGER"
+      ? { user: { is: { managerId: session.sub } } }
+      : {};
+
   const rules = await prisma.discountRule.findMany({
+    where,
     orderBy: { createdAt: "desc" },
     include: {
       user: { select: { id: true, fullName: true, login: true } },
