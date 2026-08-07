@@ -57,8 +57,10 @@ body {
   .input {
     @apply w-full rounded border border-line bg-white px-3 py-2 text-sm outline-none transition-all duration-200 hover:border-gray-300 focus:border-accent focus:ring-2 focus:ring-accent/25;
   }
+  /* whitespace-nowrap: складская плашка не должна переноситься по словам —
+     «Car City склад: 4» разрывался пополам в узкой колонке. */
   .badge {
-    @apply inline-flex items-center rounded px-2 py-0.5 text-[11px] font-semibold transition-colors duration-150;
+    @apply inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-semibold transition-colors duration-150;
   }
 }
 

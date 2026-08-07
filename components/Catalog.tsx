@@ -211,12 +211,17 @@ function ProductImage({
 function ClampedText({
   text,
   lines,
+  fill,
   className,
 }: {
   text: string;
   // До 4 строк: у товара с несколькими складами строка списка выше, и
   // применяемости достаётся больше места.
   lines: 1 | 2 | 3 | 4;
+  // fill — занять всю высоту родителя вместо фиксированного числа строк.
+  // Нужно в карточках сетки: они тянутся под самую высокую в ряду, и текст
+  // должен заполнять то, что осталось, а не обрываться на второй строке.
+  fill?: boolean;
   className?: string;
 }) {
   const ref = useRef<HTMLParagraphElement>(null);
@@ -269,13 +274,18 @@ function ClampedText({
         }}
         className={cx(
           "cursor-help",
-          lines === 1
-            ? "line-clamp-1"
-            : lines === 2
-              ? "line-clamp-2"
-              : lines === 3
-                ? "line-clamp-3"
-                : "line-clamp-4",
+          fill
+            ? // absolute: текст НЕ участвует в расчёте высоты родителя,
+              // иначе длинная применяемость сама растягивала бы карточку.
+              // Он лишь заполняет то место, которое осталось.
+              "absolute inset-0 overflow-hidden"
+            : lines === 1
+              ? "line-clamp-1"
+              : lines === 2
+                ? "line-clamp-2"
+                : lines === 3
+                  ? "line-clamp-3"
+                  : "line-clamp-4",
           className
         )}
       >
@@ -1123,7 +1133,10 @@ export default function Catalog({
                       <th className="w-32 sm:w-40">Артикул</th>
                       <th className="hidden w-36 sm:table-cell">Категория</th>
                       <th>Применяемость</th>
-                      <th className="w-40 sm:w-60">Наличие</th>
+                      {/* Колонка была на 240px при плашках в ~130px, и между
+                          наличием и ценой зияла пустая полоса. Освободившееся
+                          уходит применяемости — ей места всегда мало. */}
+                      <th className="w-36 sm:w-44">Наличие</th>
                       <th className="w-24 text-right sm:w-28">Цена</th>
                       {showActions && <th className="w-44 sm:w-72"></th>}
                       {showAdminControls && (
@@ -1507,9 +1520,15 @@ export default function Catalog({
                           )}
                         </div>
                         {desc && (
-                          <div className="mt-1">
+                          // Применяемость занимает всё свободное место
+                          // карточки: в ряду карточки тянутся под самую
+                          // высокую (у товара с двумя складами), и у соседей
+                          // с одним складом посередине зияла пустота. Теперь
+                          // текст показывает столько строк, сколько влезло.
+                          <div className="relative mt-1 min-h-[2.2rem] flex-1 overflow-hidden">
                             <ClampedText
                               text={desc}
+                              fill
                               lines={2}
                               className="text-[10px] leading-snug text-muted sm:text-xs"
                             />
