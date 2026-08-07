@@ -15,6 +15,7 @@ import {
   ImageOff,
   ExternalLink,
   PencilLine,
+  Maximize2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatTenge, formatDateTime } from "@/lib/format";
@@ -141,6 +142,9 @@ export default function OrdersAdmin() {
     left: number;
     item: OrderItem;
   } | null>(null);
+  // Фото во весь экран по клику — навести мышь можно не всегда (телефон),
+  // да и рассмотреть деталь в подсказке 240px нельзя.
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const PREVIEW_W = 240;
   const PREVIEW_H = 280;
@@ -576,22 +580,38 @@ export default function OrdersAdmin() {
                                     key={it.id}
                                     onMouseEnter={(e) => showPreview(e, it)}
                                     onMouseLeave={() => setPreview(null)}
-                                    onClick={() => openInCatalog(it)}
-                                    title={`Открыть ${it.sku} в каталоге`}
                                     className={cx(
-                                      "group/it cursor-pointer",
+                                      "group/it",
                                       it.isGift && "bg-green-50/50"
                                     )}
                                   >
+                                    {/* Клик по фото раскрывает картинку, а не
+                                        уводит в каталог: строку целиком больше
+                                        не делаем ссылкой — уйти со страницы
+                                        заказа случайно было слишком легко. */}
                                     <td>
                                       {it.imageUrl ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={`/api/image?u=${encodeURIComponent(it.imageUrl)}`}
-                                          alt={it.sku}
-                                          loading="lazy"
-                                          className="h-10 w-10 rounded border border-line bg-white object-contain"
-                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setLightboxSrc(
+                                              `/api/image?u=${encodeURIComponent(it.imageUrl as string)}`
+                                            )
+                                          }
+                                          title="Посмотреть фото"
+                                          className="group/th relative h-10 w-10 overflow-hidden rounded border border-line bg-white"
+                                        >
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img
+                                            src={`/api/image?u=${encodeURIComponent(it.imageUrl)}`}
+                                            alt={it.sku}
+                                            loading="lazy"
+                                            className="h-full w-full object-contain"
+                                          />
+                                          <span className="absolute inset-0 hidden items-center justify-center bg-ink/40 text-white group-hover/th:flex">
+                                            <Maximize2 size={13} />
+                                          </span>
+                                        </button>
                                       ) : (
                                         <div className="flex h-10 w-10 items-center justify-center rounded border border-line bg-gray-50 text-gray-300">
                                           <ImageOff size={14} />
@@ -599,13 +619,18 @@ export default function OrdersAdmin() {
                                       )}
                                     </td>
                                     <td className="font-semibold text-ink">
-                                      <span className="inline-flex items-center gap-1.5 group-hover/it:text-accent">
+                                      <button
+                                        type="button"
+                                        onClick={() => openInCatalog(it)}
+                                        title={`Открыть ${it.sku} в каталоге`}
+                                        className="inline-flex items-center gap-1.5 hover:text-accent"
+                                      >
                                         {it.sku}
                                         <ExternalLink
                                           size={12}
                                           className="opacity-0 transition-opacity group-hover/it:opacity-100"
                                         />
-                                      </span>
+                                      </button>
                                     </td>
                                     <td>
                                       <span className="text-ink">{it.name}</span>
@@ -817,10 +842,34 @@ export default function OrdersAdmin() {
             <div className="line-clamp-2 text-[11px] leading-snug text-muted">
               {preview.item.name}
             </div>
-            <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-accent">
-              <ExternalLink size={10} /> Нажмите, чтобы открыть в каталоге
+            <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-muted">
+              <Maximize2 size={10} /> Клик по фото — крупнее, по артикулу — в
+              каталог
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Фото во весь экран. */}
+      {lightboxSrc && (
+        <div
+          onClick={() => setLightboxSrc(null)}
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4"
+        >
+          <button
+            onClick={() => setLightboxSrc(null)}
+            aria-label="Закрыть"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          >
+            <X size={20} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxSrc}
+            alt=""
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-full max-w-full rounded-lg bg-white object-contain"
+          />
         </div>
       )}
     </div>
