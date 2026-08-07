@@ -438,6 +438,12 @@ export default function Catalog({
     [cartItems]
   );
 
+  // Предел количества для строки: остаток склада. Если остаток скрыт как
+  // «>70» (capped), точного числа клиент не знает — предел не ставим, лишнее
+  // отсечёт сервер при оформлении.
+  const lineMax = (stock?: { qty: number; capped?: boolean } | null) =>
+    stock && !stock.capped ? stock.qty : undefined;
+
   // Строки заказа для товара: по одной на каждый доступный склад с остатком.
   // Клиент заказывает СО СКЛАДА, поэтому у каждого своя цена, количество и
   // кнопка корзины, а в корзину ложатся отдельные позиции. Если остатка нет
@@ -1107,7 +1113,7 @@ export default function Catalog({
               </EmptyState>
             ) : view === "list" ? (
               /* ─── List (table) view (scrolls horizontally on phones) ── */
-              <div className="overflow-x-auto rounded-lg border border-line bg-white">
+              <div className="overflow-x-auto rounded-lg border border-gray-300 bg-white">
                 {/* На телефоне таблица уже: категория скрыта, кнопка в
                     действиях без подписи — иначе вправо ехать слишком долго. */}
                 <table className="data-table min-w-[680px] sm:min-w-[1040px]">
@@ -1345,6 +1351,7 @@ export default function Catalog({
                                         layout="row"
                                         outOfStock={!ln.stock}
                                         inCartQty={cartQtyByKey.get(ln.key) ?? 0}
+                                        max={lineMax(ln.stock)}
                                         onQtyChange={(n) =>
                                           setPick(
                                             ln.key,
@@ -1434,12 +1441,15 @@ export default function Catalog({
                     <div
                       style={{ animationDelay: `${Math.min(i, 11) * 25}ms` }}
                       className={cx(
+                        // border-gray-300 вместо бледного border-line: на
+                        // белом фоне контур карточек почти не читался, и
+                        // сетка выглядела сплошным полотном.
                         "animate-fade-in-up group relative flex flex-col rounded-xl border transition-all duration-200 hover:z-10 hover:shadow-lg",
                         // Точное совпадение — как в списке: красная заливка
                         // bg-accent/5 плюс выраженная красная рамка.
                         row.exactMatch
                           ? "border-accent bg-accent/5 shadow-md ring-2 ring-accent/25"
-                          : "border-line bg-white shadow-sm"
+                          : "border-gray-300 bg-white shadow-sm hover:border-gray-400"
                       )}
                     >
                       <div className="relative flex h-28 items-center justify-center overflow-hidden rounded-t-xl border-b border-line bg-gray-50 p-2 sm:h-44 sm:p-3">
@@ -1520,7 +1530,7 @@ export default function Catalog({
                                 key={ln.key}
                                 className={cx(
                                   lines.length > 1 &&
-                                    "rounded-lg border border-line p-2 sm:p-2.5",
+                                    "rounded-lg border border-gray-300 p-2 sm:p-2.5",
                                   lines.length > 1 && lnIdx > 0 && "mt-2"
                                 )}
                               >
@@ -1585,6 +1595,7 @@ export default function Catalog({
                                     step={step}
                                     outOfStock={!ln.stock}
                                     inCartQty={cartQtyByKey.get(ln.key) ?? 0}
+                                    max={lineMax(ln.stock)}
                                     onQtyChange={(n) =>
                                       setPick(
                                         ln.key,

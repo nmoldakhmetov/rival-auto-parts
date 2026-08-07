@@ -96,6 +96,19 @@ export default function Cart({
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const openInCatalog = (sku: string) =>
     router.push(`/catalog?q=${encodeURIComponent(sku)}`);
+  // Остатки по складам для позиций корзины (из /api/cart/reprice): по ним
+  // количество нельзя поднять выше того, что реально есть на складе.
+  const [whStock, setWhStock] = useState<
+    Record<string, { name: string; qty: number; capped?: boolean }[]>
+  >({});
+  // Предел для строки: остаток ЕЁ склада. Скрытый остаток («>70») предела не
+  // даёт — точного числа клиент не знает, лишнее отсечёт сервер.
+  const maxFor = (i: CartItem) => {
+    const opt = (whStock[i.productId] ?? []).find(
+      (o) => o.name === (i.warehouse ?? "")
+    );
+    return opt && !opt.capped ? opt.qty : undefined;
+  };
   // Выбор позиций для оформления. Храним СНЯТЫЕ галочки, а не поставленные:
   // по умолчанию выбрано всё, и товар, добавленный уже на этой странице,
   // автоматически попадает в заказ, а не теряется молча.
@@ -154,6 +167,7 @@ export default function Cart({
     })
       .then((r) => r.json())
       .then((d) => {
+        if (d?.warehouses) setWhStock(d.warehouses);
         if (d?.prices) useCart.getState().updatePrices(d.prices);
       })
       .catch(() => {});
@@ -531,6 +545,7 @@ export default function Cart({
                       <CartQtySelector
                         qty={i.qty}
                         step={step}
+                        max={maxFor(i)}
                         onSet={(n) => setQty(key, n)}
                         onRemove={() => remove(key)}
                       />
@@ -661,6 +676,7 @@ export default function Cart({
                       <CartQtySelector
                         qty={i.qty}
                         step={step}
+                        max={maxFor(i)}
                         onSet={(n) => setQty(key, n)}
                         onRemove={() => remove(key)}
                       />
@@ -861,7 +877,9 @@ export default function Cart({
           )}
 
           {error && (
-            <div className="mb-3 rounded border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-accent-dark">
+            // whitespace-pre-line: сервер перечисляет позиции, которых не
+            // хватило на складе, по строкам.
+            <div className="mb-3 whitespace-pre-line rounded border border-accent/30 bg-accent/5 px-3 py-2 text-xs leading-relaxed text-accent-dark">
               {error}
             </div>
           )}

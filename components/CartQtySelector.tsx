@@ -15,12 +15,19 @@ export default function CartQtySelector({
   onSet,
   onRemove,
   step = 1,
+  max,
 }: {
   qty: number;
   onSet: (n: number) => void;
   onRemove?: () => void;
   step?: number;
+  // Остаток склада: больше него набрать нельзя. Не задан — ограничения нет
+  // (например, у клиента остаток скрыт как «>70», точного числа он не знает,
+  // и решает сервер при оформлении).
+  max?: number;
 }) {
+  const cap = (n: number) =>
+    Math.min(max != null ? Math.max(step, max) : Infinity, n);
   const [draft, setDraft] = useState(String(qty));
   // Reflect external changes (±, edits elsewhere) back into the field.
   useEffect(() => {
@@ -35,7 +42,7 @@ export default function CartQtySelector({
     qtyRef.current = qty;
   }, [qty]);
   function bump(delta: number) {
-    const next = Math.max(step, qtyRef.current + delta);
+    const next = cap(Math.max(step, qtyRef.current + delta));
     qtyRef.current = next;
     onSet(next);
   }
@@ -45,7 +52,7 @@ export default function CartQtySelector({
     setDraft(digits);
     if (step > 1) return; // stepped items commit on blur/Enter (store snaps)
     const n = parseInt(digits, 10);
-    if (Number.isFinite(n) && n >= 1) onSet(Math.min(n, 100000));
+    if (Number.isFinite(n) && n >= 1) onSet(cap(Math.min(n, 100000)));
   }
   // On blur, commit stepped input / snap an empty or zero field back to the
   // current quantity (removal is the minus button's job, never empty input).
@@ -56,9 +63,12 @@ export default function CartQtySelector({
       return;
     }
     if (step > 1) {
-      onSet(Math.min(n, 100000));
+      onSet(cap(Math.min(n, 100000)));
       setDraft(String(qty)); // store snap re-syncs via the effect above
+      return;
     }
+    // Набрали больше остатка — возвращаем к максимуму, а не молча оставляем.
+    if (max != null && n > max) onSet(cap(n));
   }
 
   return (
@@ -95,8 +105,13 @@ export default function CartQtySelector({
       />
       <button
         onClick={() => bump(step)}
-        title="Добавить ещё"
-        className="flex h-full w-10 shrink-0 items-center justify-center rounded-r-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink"
+        disabled={max != null && qty >= max}
+        title={
+          max != null && qty >= max
+            ? `На складе всего ${max} шт`
+            : "Добавить ещё"
+        }
+        className="flex h-full w-10 shrink-0 items-center justify-center rounded-r-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
       >
         <Plus size={16} />
       </button>

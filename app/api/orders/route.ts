@@ -120,6 +120,13 @@ export async function POST(req: NextRequest) {
     warehouse: string | null;
   }[] = [];
   const qtyById = new Map<string, number>();
+  // Заказать больше, чем лежит на складе, нельзя. Проверяем на сервере: у
+  // клиента остаток выше порога показан как «>70», и точного числа он не
+  // знает — верить его расчётам нельзя. Считаем по СУММЕ строк: один товар
+  // может прийти двумя строками с одного склада.
+  const wantedByLine = new Map<string, number>();
+  const overStock: string[] = [];
+
   for (const i of incoming) {
     const p = byId.get(i.productId);
     if (!p) continue;
@@ -128,6 +135,19 @@ export async function POST(req: NextRequest) {
     if (isPairOnly(p.category)) qty = snapPairQty(qty);
     const price = Math.round(Number(p.price) * (1 - disc.pctFor(p) / 100));
     const warehouse = pickWarehouse(whOptions.get(p.id), i.warehouse);
+
+    // Остаток именно того склада, с которого заказывают.
+    const available =
+      (whOptions.get(p.id) ?? []).find((o) => o.name === warehouse)?.qty ?? 0;
+    const lineKey = `${p.id} ${warehouse ?? ""}`;
+    const wanted = (wantedByLine.get(lineKey) ?? 0) + qty;
+    wantedByLine.set(lineKey, wanted);
+    if (wanted > available) {
+      overStock.push(
+        `${p.sku} — на складе «${warehouse ?? "не определён"}» ${available} шт, в заказе ${wanted}`
+      );
+    }
+
     total += price * qty;
     qtyById.set(p.id, (qtyById.get(p.id) ?? 0) + qty);
     orderItems.push({
@@ -146,6 +166,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "Товары не найдены в каталоге" },
       { status: 400 }
+    );
+  }
+
+  // Заказ целиком не принимаем: молча урезать количество нельзя — клиент
+  // рассчитывает на объём, а менеджер получил бы не тот заказ.
+  if (overStock.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          "Столько нет на складе:\n" +
+          overStock.join("\n") +
+          "\nУменьшите количество в корзине.",
+        overStock,
+      },
+      { status: 409 }
     );
   }
 

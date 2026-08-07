@@ -16,6 +16,7 @@ export default function AddToCartPanel({
   step = 1,
   outOfStock,
   inCartQty = 0,
+  max,
   layout = "stack",
   onQtyChange,
   onAdd,
@@ -25,6 +26,10 @@ export default function AddToCartPanel({
   outOfStock?: boolean;
   // Already in the cart (shown as a hint; the button always adds more).
   inCartQty?: number;
+  // Остаток склада: столько максимум можно набрать. Не задан — предела нет
+  // (клиенту остаток выше порога показан как «>70», точного числа он не
+  // знает, и лишнее отсечёт сервер при оформлении).
+  max?: number;
   layout?: "stack" | "row";
   onQtyChange: (n: number) => void;
   onAdd: (qty: number) => void;
@@ -99,7 +104,12 @@ export default function AddToCartPanel({
       <div>
         <div className="flex items-center gap-1">
           <div className="w-24 shrink-0">
-            <CartQtySelector qty={qty} step={step} onSet={onQtyChange} />
+            <CartQtySelector
+              qty={qty}
+              step={step}
+              max={max}
+              onSet={onQtyChange}
+            />
           </div>
           {button}
         </div>
@@ -114,7 +124,7 @@ export default function AddToCartPanel({
 
   return (
     <div>
-      <CartQtySelector qty={qty} step={step} onSet={onQtyChange} />
+      <CartQtySelector qty={qty} step={step} max={max} onSet={onQtyChange} />
       {button}
       {inCartQty > 0 && (
         <div className="mt-1.5 text-center text-[11px] font-semibold text-green-700">
