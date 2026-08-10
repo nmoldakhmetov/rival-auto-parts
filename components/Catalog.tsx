@@ -1282,7 +1282,10 @@ export default function Catalog({
                               ))}
                             </div>
                           </td>
-                          <td className="align-top text-right font-semibold text-ink">
+                          {/* tabular-nums: у пропорциональных цифр «2 723» и
+                              «265» разной ширины, и колонка цен выглядела
+                              рваной. */}
+                          <td className="align-top text-right font-semibold tabular-nums text-ink">
                             <div className="flex flex-col gap-1.5">
                               {lines.map((ln) => {
                                 const q = pickQty[ln.key] ?? step;
@@ -1293,15 +1296,17 @@ export default function Catalog({
                                   >
                                     {row.price > 0 ? (
                                       <>
-                                        {row.discountPct > 0 &&
-                                          row.oldPrice != null && (
-                                            <div className="text-xs font-medium text-gray-400 line-through">
-                                              {formatTenge(row.oldPrice * q)}
-                                            </div>
-                                          )}
-                                        <div className="flex items-center justify-end gap-1.5">
-                                          {formatTenge(row.price * q)}
-                                          {row.discountPct > 0 && (
+                                        {/* Скидка и старая цена — строкой выше:
+                                            рядом с ценой пилюля сдвигала число
+                                            влево, и цены переставали стоять
+                                            одна под другой. */}
+                                        {row.discountPct > 0 && (
+                                          <div className="flex items-center justify-end gap-1.5 leading-tight">
+                                            {row.oldPrice != null && (
+                                              <span className="text-[11px] font-medium text-gray-400 line-through">
+                                                {formatTenge(row.oldPrice * q)}
+                                              </span>
+                                            )}
                                             <span className="whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                                               {formatDiscount(
                                                 discountDisplay,
@@ -1312,7 +1317,10 @@ export default function Catalog({
                                                 row.price * q
                                               )}
                                             </span>
-                                          )}
+                                          </div>
+                                        )}
+                                        <div className="whitespace-nowrap leading-tight">
+                                          {formatTenge(row.price * q)}
                                         </div>
                                         {pair ? (
                                           <div className="text-[10px] font-semibold text-muted">

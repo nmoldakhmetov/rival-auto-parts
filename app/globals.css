@@ -33,6 +33,17 @@ body {
   .data-table thead th {
     @apply bg-[#f7f7f8] text-left font-semibold text-ink/70 uppercase tracking-wide text-[11px] px-3 py-2 border-b border-line;
   }
+  /* Выравнивание, заданное утилитой на самом th, должно побеждать правило
+     выше: у него специфичность больше, и «Цена» оставалась у левого края
+     колонки, пока числа под ней стояли у правого. Объявления обычные, а не
+     @apply: применить утилиту к селектору с ней же Tailwind считает
+     циклической зависимостью. */
+  .data-table thead th.text-right {
+    text-align: right;
+  }
+  .data-table thead th.text-center {
+    text-align: center;
+  }
   /* border-gray-200 вместо бледного border-line: разделители строк почти
      сливались с фоном, и список читался сплошным полотном. */
   .data-table tbody td {
