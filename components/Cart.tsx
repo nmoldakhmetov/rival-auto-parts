@@ -569,7 +569,9 @@ export default function Cart({
                     подарок
                   </span>
                 </div>
-                <div className="text-[11px] text-muted">{g.row.name}</div>
+                {/* Клиенту — применяемость, служебное имя из 1С он не
+                    видит нигде (lib/product-title). */}
+                <div className="text-[11px] text-muted">{g.row.fullName}</div>
                 <div className="mt-1.5 flex items-center justify-between text-sm font-semibold text-green-700">
                   <span>Бесплатно × {g.qty}</span>
                   <span>0 ₸</span>
@@ -707,7 +709,9 @@ export default function Cart({
                         подарок
                       </span>
                     </div>
-                    <div className="text-[11px] text-muted">{g.row.name}</div>
+                    <div className="text-[11px] text-muted">
+                      {g.row.fullName}
+                    </div>
                   </td>
                   <td className="text-right font-semibold text-green-700">
                     Бесплатно

@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getDiscountContext, priceFor } from "@/lib/pricing";
 import { cached } from "@/lib/cache";
 import { getSetting } from "@/lib/settings";
+import { productTitle } from "@/lib/product-title";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,9 @@ export async function POST(req: NextRequest) {
     return {
       id: p.id,
       sku: p.sku,
-      name: p.name,
+      // Строка уходит прямо в корзину, поэтому имя здесь — то, что увидит
+      // смотрящий: клиенту применяемость, служебное имя 1С не показываем.
+      name: productTitle(p, session.role),
       category: p.category,
       price: priced.price,
       oldPrice: priced.oldPrice,

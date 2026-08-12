@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import ReturnsClient from "@/components/ReturnsClient";
 import OrdersAccordion from "@/components/OrdersAccordion";
+import { productTitle } from "@/lib/product-title";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Мои заказы — Rival Auto Parts" };
@@ -55,9 +56,26 @@ export default async function OrdersPage({
   const isClient = session.role === "CLIENT";
   const tab = isClient && searchParams.tab === "returns" ? "returns" : "orders";
 
+  // Подпись позиции заказа: снимок применяемости, у старых заказов — из
+  // товара. Клиенту служебное имя из 1С не показывается (lib/product-title):
+  // у заказов до этого поля с удалённым товаром останется только артикул.
+  const itemTitle = (i: {
+    fullName: string | null;
+    name: string;
+    product?: { fullName: string | null } | null;
+  }) =>
+    productTitle(
+      { fullName: i.fullName ?? i.product?.fullName ?? null, name: i.name },
+      session.role
+    );
+
   const orders = await prisma.order.findMany({
     where: { userId: session.sub },
-    include: { items: true },
+    // Применяемость берём из снимка строки, а если заказ старше этого поля —
+    // из самого товара. Клиент видит только её (см. lib/product-title).
+    include: {
+      items: { include: { product: { select: { fullName: true } } } },
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -95,7 +113,7 @@ export default async function OrdersPage({
         orderItems.push({
           productId: it.productId,
           sku: it.sku,
-          name: it.name,
+          name: itemTitle(it),
           price: Number(it.price),
         });
       }
@@ -169,7 +187,7 @@ export default async function OrdersPage({
               id: i.id,
               productId: i.productId,
               sku: i.sku,
-              name: i.name,
+              name: itemTitle(i),
               price: Number(i.price),
               qty: i.qty,
               qtyOriginal: i.qtyOriginal,

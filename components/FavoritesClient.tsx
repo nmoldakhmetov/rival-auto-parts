@@ -7,6 +7,7 @@ import { useCart } from "@/store/cart";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
 import { isPairOnly, snapPairQty, PAIR_STEP } from "@/lib/pair-only";
+import { productTitle } from "@/lib/product-title";
 import type { CatalogRow } from "@/lib/types";
 import type { Role } from "@/lib/jwt";
 import AddToCartPanel from "@/components/AddToCartPanel";
@@ -98,7 +99,8 @@ export default function FavoritesClient({ role }: { role: Role }) {
       {
         productId: row.id,
         sku: row.sku,
-        name: row.name,
+        // Клиенту показывается применяемость, а не служебное имя из 1С.
+        name: productTitle(row, role),
         price: row.price,
         oldPrice: row.oldPrice,
         discountPct: row.discountPct,

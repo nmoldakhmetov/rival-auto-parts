@@ -5,6 +5,7 @@ import { getDiscountContext, priceFor } from "@/lib/pricing";
 import { getSetting } from "@/lib/settings";
 import { warehouseOptionsFor } from "@/lib/order-warehouses";
 import { capStockForClient } from "@/lib/stock";
+import { productTitle } from "@/lib/product-title";
 
 export const dynamic = "force-dynamic";
 
@@ -47,18 +48,29 @@ export async function POST(req: NextRequest) {
 
   const prices: Record<
     string,
-    { price: number; oldPrice: number | null; discountPct: number }
+    {
+      price: number;
+      oldPrice: number | null;
+      discountPct: number;
+      name: string;
+    }
   > = {};
   for (const p of products) {
     const dropActive =
       p.oldPrice != null &&
       (dropDays <= 0 ||
         (p.priceDropAt != null && p.priceDropAt.getTime() > dropCutoffMs));
-    prices[p.id] = priceFor(
-      Number(p.price),
-      dropActive && p.oldPrice != null ? Number(p.oldPrice) : null,
-      disc.pctFor(p)
-    );
+    prices[p.id] = {
+      ...priceFor(
+        Number(p.price),
+        dropActive && p.oldPrice != null ? Number(p.oldPrice) : null,
+        disc.pctFor(p)
+      ),
+      // Заодно освежаем подпись позиции. Корзины, сохранённые до этого,
+      // держат в localStorage служебное имя из 1С — клиенту его видеть
+      // нельзя, и открытие корзины заменяет его применяемостью.
+      name: productTitle(p, session.role),
+    };
   }
 
   // Точные остатки клиенту не показываем — то же правило, что в каталоге

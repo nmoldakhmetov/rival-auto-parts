@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { productTitle } from "@/lib/product-title";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,9 @@ export async function GET() {
   }
   const returns = await prisma.return.findMany({
     where: { userId: session.sub },
+    // Снимок возврата хранит служебное имя из 1С — оно нужно менеджеру в
+    // «Возвратах». Своему же списку клиент видит применяемость.
+    include: { product: { select: { fullName: true } } },
     orderBy: { createdAt: "desc" },
   });
   return NextResponse.json({
@@ -102,7 +106,10 @@ export async function GET() {
       id: r.id,
       code: r.code,
       sku: r.sku,
-      name: r.name,
+      name: productTitle(
+        { fullName: r.product?.fullName ?? null, name: r.name },
+        session.role
+      ),
       qty: r.qty,
       price: Number(r.price),
       warehouseName: r.warehouseName,

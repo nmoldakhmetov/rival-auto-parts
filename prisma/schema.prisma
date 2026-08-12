@@ -277,7 +277,11 @@ model OrderItem {
   orderId   String
   productId String?
   sku       String // snapshot at order time
-  name      String // snapshot at order time
+  name      String // служебное имя номенклатуры 1С: персонал, письмо, 1С
+  // Применяемость на момент заказа. Клиент видит ТОЛЬКО её — служебное имя
+  // из 1С ему не показывается нигде. Снимок, а не связь: товар, пропавший
+  // из выгрузки, удаляется, и в старом заказе иначе не осталось бы описания.
+  fullName  String?
   price     Decimal @db.Decimal(12, 2) // snapshot at order time
   qty       Int
   // Сколько клиент заказал изначально. Заполняется только при правке

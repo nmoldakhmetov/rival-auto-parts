@@ -15,6 +15,7 @@ import { buildOneCComment, sendOrderToOneC } from "@/lib/onec-orders";
 import { getActiveGiftRules } from "@/lib/gifts";
 import { earnedGiftQty } from "@/lib/gift-earn";
 import { isPairOnly, snapPairQty } from "@/lib/pair-only";
+import { productTitle } from "@/lib/product-title";
 import { sendOrderMail } from "@/lib/mail";
 import { sendOrderTelegram } from "@/lib/telegram";
 import {
@@ -105,6 +106,10 @@ export async function POST(req: NextRequest) {
     productId: string;
     sku: string;
     name: string;
+    // Применяемость на момент заказа: её и только её видит клиент в «Моих
+    // заказах». Снимок нужен потому, что товар, пропавший из выгрузки 1С,
+    // удаляется — описания в старом заказе иначе не осталось бы.
+    fullName: string | null;
     price: number;
     qty: number;
     isGift: boolean;
@@ -154,6 +159,7 @@ export async function POST(req: NextRequest) {
       productId: p.id,
       sku: p.sku,
       name: p.name,
+      fullName: p.fullName,
       price,
       qty,
       isGift: false,
@@ -206,6 +212,7 @@ export async function POST(req: NextRequest) {
         productId: gp.id,
         sku: gp.sku,
         name: gp.name,
+        fullName: gp.fullName,
         price: 0,
         qty: giftQty,
         isGift: true,
@@ -358,12 +365,14 @@ export async function POST(req: NextRequest) {
   // Big orders would blow past URL limits (~2K chars) and break the wa.me
   // link entirely — cap the message; the full order is always in the portal.
   const MAX_WA_LINES = 40;
-  const lines = orderItems.slice(0, MAX_WA_LINES).map(
-    (i, idx) =>
-      `${idx + 1}. ${i.sku} — ${i.name} × ${i.qty} шт.${
-        i.isGift ? " (подарок)" : ""
-      }`
-  );
+  // Письмо открывается в WhatsApp У КЛИЕНТА — значит, и здесь применяемость,
+  // а не служебное имя из 1С. Менеджеру хватает артикула: он у строки первый.
+  const lines = orderItems.slice(0, MAX_WA_LINES).map((i, idx) => {
+    const title = productTitle({ fullName: i.fullName, name: i.name }, "CLIENT");
+    return `${idx + 1}. ${i.sku}${title ? ` — ${title}` : ""} × ${i.qty} шт.${
+      i.isGift ? " (подарок)" : ""
+    }`;
+  });
   if (orderItems.length > MAX_WA_LINES) {
     lines.push(
       `…и ещё ${orderItems.length - MAX_WA_LINES} поз. — полный состав в портале`

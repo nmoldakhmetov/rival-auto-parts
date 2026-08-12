@@ -24,6 +24,7 @@ import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
 import { isPairOnly, snapPairQty, PAIR_STEP } from "@/lib/pair-only";
 import { addSearchHistory } from "@/lib/search-history";
+import { productTitle } from "@/lib/product-title";
 import AddToCartPanel from "@/components/AddToCartPanel";
 import { canEditCatalog } from "@/lib/permissions";
 import StockBadges from "@/components/StockBadges";
@@ -678,7 +679,9 @@ export default function Catalog({
       {
         productId: row.id,
         sku: row.sku,
-        name: row.name,
+        // В корзину кладём то, что человек видит в каталоге: клиенту —
+        // применяемость, служебное имя из 1С ему не показывается.
+        name: productTitle(row, role),
         price: row.price,
         // Carry the discount into the cart so it stays visible there.
         oldPrice: row.oldPrice,
@@ -1445,8 +1448,7 @@ export default function Catalog({
                   const step = pair ? PAIR_STEP : 1;
                   // По блоку заказа на каждый доступный склад.
                   const lines = warehouseLines(row);
-                  const desc =
-                    row.fullName || (role === "CLIENT" ? "" : row.name);
+                  const desc = productTitle(row, role);
                   return (
                     <Fragment key={row.id}>
                     {/* Разделитель на всю ширину сетки: выше — найденный
