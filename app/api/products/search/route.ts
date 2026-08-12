@@ -96,10 +96,19 @@ export async function GET(req: NextRequest) {
   const dropCutoffMs = nowMs - dropDays * 86_400_000;
 
   // Analog cross-reference: a typed code may resolve to one or more catalog skus.
+  //
+  // Артикул в файле аналогов пишут как придётся: «BCB-3491» и «BCG-3110»
+  // против «BCB3491» и «BCG3110» в каталоге. Сравнение строка-в-строку такие
+  // пары не находило — код 4777522010 не давал ничего, хотя строка аналога
+  // есть. Сопоставляем по нормализованному виду (Product.skuNorm), точное
+  // совпадение оставляем на случай пустого skuNorm.
   const analogMatches = q ? await findAnalogMatches(q) : [];
   const analogSkus = [...new Set(analogMatches.map((a) => a.sku))];
+  const analogSkuNorms = [
+    ...new Set(analogMatches.map((a) => normalizeSmart(a.sku)).filter(Boolean)),
+  ];
   const analogBySku = new Map(
-    analogMatches.map((a) => [a.sku.toUpperCase(), a])
+    analogMatches.map((a) => [normalizeSmart(a.sku), a])
   );
 
   // Free-text search OR — the SAME field set is used for the search box (q)
@@ -126,6 +135,7 @@ export async function GET(req: NextRequest) {
     const or = textSearchOr(q);
     // A typed code can also resolve to catalog skus via the analog table.
     if (analogSkus.length > 0) or.push({ sku: { in: analogSkus } });
+    if (analogSkuNorms.length > 0) or.push({ skuNorm: { in: analogSkuNorms } });
     and.push({ OR: or });
   }
   // The make facet only narrows the result when NO model is chosen. Picking a
@@ -340,7 +350,7 @@ export async function GET(req: NextRequest) {
       })),
       isClient
     );
-    const analog = analogBySku.get(p.sku.toUpperCase());
+    const analog = analogBySku.get(p.skuNorm ?? normalizeSmart(p.sku));
     // The 1С price-drop strike-through only lives `price_drop_days` days
     // (0 = no limit). The badge auto-falls-back to «новинка» while newUntil.
     const dropActive =
