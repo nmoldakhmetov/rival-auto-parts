@@ -1,9 +1,11 @@
+import Link from "next/link";
 import {
   ShoppingCart,
   Search,
   Eye,
   TrendingUp,
   Package,
+  ArrowRight,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatNum } from "@/lib/format";
@@ -108,7 +110,11 @@ export default async function StatsPage() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <TopCard title="Чаще всего покупают" Icon={ShoppingCart}>
+        <TopCard
+          title="Чаще всего покупают"
+          Icon={ShoppingCart}
+          href="/admin/stats/bought"
+        >
           {bought.length === 0 ? (
             <Empty />
           ) : (
@@ -124,7 +130,7 @@ export default async function StatsPage() {
           )}
         </TopCard>
 
-        <TopCard title="Чаще всего ищут" Icon={Search}>
+        <TopCard title="Чаще всего ищут" Icon={Search} href="/admin/stats/searched">
           {searched.length === 0 ? (
             <Empty />
           ) : (
@@ -139,7 +145,7 @@ export default async function StatsPage() {
           )}
         </TopCard>
 
-        <TopCard title="Чаще всего смотрят" Icon={Eye}>
+        <TopCard title="Чаще всего смотрят" Icon={Eye} href="/admin/stats/viewed">
           {viewed.length === 0 ? (
             <Empty hint="Просмотры считаются при открытии фото товара." />
           ) : (
@@ -171,19 +177,30 @@ export default async function StatsPage() {
 function TopCard({
   title,
   Icon,
+  href,
   children,
 }: {
   title: string;
   Icon: typeof Package;
+  // Куда ведёт «Показать всё»: карточка показывает первые 15, полный
+  // список живёт на своей странице со страницами по 50.
+  href: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-white shadow-sm">
+    <div className="flex flex-col overflow-hidden rounded-xl border border-line bg-white shadow-sm">
       <div className="flex items-center gap-2 border-b border-line bg-gray-50 px-4 py-2.5">
         <Icon size={15} className="text-accent" />
         <h2 className="text-sm font-bold text-ink">{title}</h2>
+        <span className="ml-auto text-[11px] text-muted">топ-15</span>
       </div>
       <div className="divide-y divide-line">{children}</div>
+      <Link
+        href={href}
+        className="mt-auto flex items-center justify-center gap-1 border-t border-line px-4 py-2 text-xs font-semibold text-accent transition-colors hover:bg-accent/5"
+      >
+        Показать всё <ArrowRight size={13} />
+      </Link>
     </div>
   );
 }
