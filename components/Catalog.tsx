@@ -1127,10 +1127,23 @@ export default function Catalog({
                     onClick={() => {
                       setQuery("");
                       resetFilters();
+                      // Запрос и фильтры приходят из адреса и при обновлении
+                      // страницы вернулись бы обратно. Чистим адрес, оставаясь
+                      // на текущем пути: у рассылки это её собственная страница.
+                      if (typeof window !== "undefined" && window.location.search) {
+                        window.history.replaceState(
+                          null,
+                          "",
+                          window.location.pathname
+                        );
+                      }
                     }}
                     className="btn-accent"
                   >
-                    <X size={15} /> Сбросить фильтры
+                    {/* Кнопка чистит и запрос, и фильтры — «Сбросить фильтры»
+                        обещало меньше, чем делает, и сбивало с толку, когда
+                        фильтров не ставили вовсе. */}
+                    <X size={15} /> Сбросить
                   </button>
                 )}
               </EmptyState>
