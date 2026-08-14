@@ -97,10 +97,18 @@ function startMaintenance() {
   const tick = async () => {
     try {
       const r = await runMaintenance();
-      if (r.blocked || r.dropsExpired || r.debtMarked) {
+      if (
+        r.blocked ||
+        r.dropsExpired ||
+        r.debtMarked ||
+        r.idleBlocked ||
+        r.idleDiscountsCleared
+      ) {
         console.log(
           `[maintenance] блокировок: ${r.blocked}, долг отмечен: ${r.debtMarked}, ` +
-            `скидок снято: ${r.dropsExpired}, новинок снято: ${r.newExpired}`
+            `по бездействию: заблокировано ${r.idleBlocked}, скидок снято ` +
+            `${r.idleDiscountsCleared}; акций снято: ${r.dropsExpired}, ` +
+            `новинок снято: ${r.newExpired}`
         );
       }
     } catch (e) {

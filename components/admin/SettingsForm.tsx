@@ -36,6 +36,9 @@ export default function SettingsForm() {
   const [autoBlockDays, setAutoBlockDays] = useState("30");
   const [newBadgeDays, setNewBadgeDays] = useState("40");
   const [priceDropDays, setPriceDropDays] = useState("13");
+  // Правила по бездействию: 0 = выключено (так они и приходят с сервера).
+  const [idleDiscountDays, setIdleDiscountDays] = useState("0");
+  const [idleBlockDays, setIdleBlockDays] = useState("0");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -56,6 +59,8 @@ export default function SettingsForm() {
         setAutoBlockDays(d.settings?.auto_block_days ?? "30");
         setNewBadgeDays(d.settings?.new_badge_days ?? "40");
         setPriceDropDays(d.settings?.price_drop_days ?? "13");
+        setIdleDiscountDays(d.settings?.idle_discount_days ?? "0");
+        setIdleBlockDays(d.settings?.idle_block_days ?? "0");
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -86,6 +91,8 @@ export default function SettingsForm() {
             auto_block_days: days(autoBlockDays),
             new_badge_days: days(newBadgeDays),
             price_drop_days: days(priceDropDays),
+            idle_discount_days: days(idleDiscountDays),
+            idle_block_days: days(idleBlockDays),
           },
         }),
       });
@@ -187,6 +194,48 @@ export default function SettingsForm() {
                 type="number"
                 value={autoBlockDays}
                 onChange={(e) => setAutoBlockDays(e.target.value)}
+                className="input w-20 text-center"
+              />
+              <span className="text-xs text-muted">дн.</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+            <div>
+              <div className="text-sm font-medium text-ink">
+                Снимать скидки при простое
+              </div>
+              <div className="text-[11px] text-muted">
+                Личные скидки клиента выключаются, если он не заказывал дольше
+                указанного срока. Правила остаются в разделе «Скидки» — их
+                можно включить обратно. Скидки «всем клиентам» не трогаются.
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <input
+                type="number"
+                value={idleDiscountDays}
+                onChange={(e) => setIdleDiscountDays(e.target.value)}
+                className="input w-20 text-center"
+              />
+              <span className="text-xs text-muted">дн.</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+            <div>
+              <div className="text-sm font-medium text-ink">
+                Блокировать при простое
+              </div>
+              <div className="text-[11px] text-muted">
+                Клиент блокируется, если не заказывал дольше указанного срока.
+                Отсчёт идёт от последнего заказа, а у ни разу не заказавшего —
+                от регистрации. Снять блокировку может менеджер.
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <input
+                type="number"
+                value={idleBlockDays}
+                onChange={(e) => setIdleBlockDays(e.target.value)}
                 className="input w-20 text-center"
               />
               <span className="text-xs text-muted">дн.</span>
