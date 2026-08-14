@@ -42,6 +42,7 @@ export default async function AdminClientsPage() {
             telegramId: true,
             role: true,
             isActive: true,
+            blockedByRole: true,
             createdAt: true,
           },
           orderBy: [{ role: "asc" }, { fullName: "asc" }],
@@ -66,6 +67,7 @@ export default async function AdminClientsPage() {
     comment: c.comment,
     createdAt: c.createdAt.toISOString(),
     isActive: c.isActive,
+    blockedByRole: c.blockedByRole,
     managerId: c.managerId,
     access: c.warehouseAccess.map((a) => a.warehouseId),
     discountSummary: summaries.get(c.id) ?? EMPTY_SUMMARY,
@@ -80,6 +82,7 @@ export default async function AdminClientsPage() {
     telegramId: s.telegramId,
     role: s.role as "MANAGER" | "ACCOUNTANT" | "RA",
     isActive: s.isActive,
+    blockedByRole: s.blockedByRole,
     createdAt: s.createdAt.toISOString(),
   }));
 

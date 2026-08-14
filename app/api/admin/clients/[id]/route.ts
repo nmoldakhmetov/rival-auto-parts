@@ -92,7 +92,7 @@ export async function PATCH(
   // Staff records (MANAGER / ACCOUNTANT / RA) are owner-level territory.
   const target = await prisma.user.findUnique({
     where: { id: params.id },
-    select: { role: true },
+    select: { role: true, isActive: true, blockedByRole: true },
   });
   if (!target) {
     return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
@@ -104,6 +104,34 @@ export async function PATCH(
   // A manager may only edit their own clients.
   if (session && target.role === "CLIENT" && !(await managerOwnsClient(session, params.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Блокировку владельца снимает только владелец.
+  //
+  // Менеджер видит своих клиентов и раньше мог включить обратно любого — в
+  // том числе того, кого выключил администратор, и решение владельца
+  // держалось до первого клика. Запоминаем, кто выключил: ADMIN/RA —
+  // снимает только ADMIN/RA; автоблокировка за долг (blockedByRole = null)
+  // по-прежнему снимается менеджером, он же разбирается с оплатой.
+  if ("isActive" in body) {
+    const owner = session?.role === "ADMIN" || session?.role === "RA";
+    const turningOn = Boolean(body.isActive);
+    if (
+      turningOn &&
+      !target.isActive &&
+      (target.blockedByRole === "ADMIN" || target.blockedByRole === "RA") &&
+      !owner
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Этого пользователя заблокировал администратор — снять блокировку может только он",
+        },
+        { status: 403 }
+      );
+    }
+    // Помечаем автора блокировки и стираем метку при разблокировке.
+    data.blockedByRole = turningOn ? null : session?.role ?? null;
   }
 
   // Handing a client over is an owner-level action. A MANAGER doing it would

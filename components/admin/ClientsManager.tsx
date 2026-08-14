@@ -46,6 +46,8 @@ type ClientRow = {
   comment: string | null;
   createdAt: string;
   isActive: boolean;
+  // Кто выключил аккаунт: блокировку владельца (ADMIN/RA) менеджер не снимает.
+  blockedByRole?: string | null;
   managerId: string | null;
   // Сводка «скидка/наценка» — считается на сервере (lib/discount-summary).
   discountSummary?: DiscountSummaryLite;
@@ -63,6 +65,7 @@ type StaffRow = {
   telegramId: string | null;
   role: StaffRoleT;
   isActive: boolean;
+  blockedByRole?: string | null;
   createdAt: string;
 };
 
@@ -738,15 +741,34 @@ export default function ClientsManager({
     if (!res.ok) setClients(prev);
   }
 
+  // Аккаунт выключен владельцем, а смотрит на него не владелец: включить
+  // обратно нельзя (то же правило проверяет и сервер).
+  function lockedByOwner(u: { isActive: boolean; blockedByRole?: string | null }) {
+    if (u.isActive) return false;
+    if (isOwner) return false;
+    return u.blockedByRole === "ADMIN" || u.blockedByRole === "RA";
+  }
+
   async function toggleActive(client: ClientRow) {
+    if (lockedByOwner(client)) return;
     const next = !client.isActive;
-    patch(client.id, { isActive: next });
+    patch(client.id, {
+      isActive: next,
+      // Метку ставит сервер; здесь она нужна, чтобы строка сразу приняла
+      // правильный вид без перезагрузки списка.
+      blockedByRole: next ? null : viewerRole,
+    });
   }
 
   async function toggleStaffActive(member: StaffRow) {
+    if (lockedByOwner(member)) return;
     const next = !member.isActive;
     setStaff((ss) =>
-      ss.map((s) => (s.id === member.id ? { ...s, isActive: next } : s))
+      ss.map((s) =>
+        s.id === member.id
+          ? { ...s, isActive: next, blockedByRole: next ? null : viewerRole }
+          : s
+      )
     );
     await patchClient(member.id, { isActive: next });
   }
@@ -1031,25 +1053,42 @@ export default function ClientsManager({
                     </button>
                   </td>
                   <td className="text-center">
-                    <button
-                      onClick={() => toggleActive(c)}
-                      className={cx(
-                        "badge border",
-                        c.isActive
-                          ? "border-green-200 bg-green-50 text-green-700"
-                          : "border-line bg-gray-100 text-muted"
-                      )}
-                    >
-                      {c.isActive ? (
-                        <>
-                          <ShieldCheck size={12} className="mr-1" /> Активен
-                        </>
-                      ) : (
-                        <>
-                          <ShieldOff size={12} className="mr-1" /> Блок
-                        </>
-                      )}
-                    </button>
+                    {(() => {
+                      // Блокировку владельца менеджер не снимает — кнопка
+                      // сразу неактивна, а не отвечает отказом по клику.
+                      const ownerBlock = lockedByOwner(c);
+                      return (
+                        <button
+                          onClick={() => toggleActive(c)}
+                          disabled={ownerBlock}
+                          title={
+                            ownerBlock
+                              ? "Заблокировал администратор — снять блокировку может только он"
+                              : c.isActive
+                                ? "Заблокировать"
+                                : "Разблокировать"
+                          }
+                          className={cx(
+                            "badge border",
+                            c.isActive
+                              ? "border-green-200 bg-green-50 text-green-700"
+                              : "border-line bg-gray-100 text-muted",
+                            ownerBlock && "cursor-not-allowed opacity-70"
+                          )}
+                        >
+                          {c.isActive ? (
+                            <>
+                              <ShieldCheck size={12} className="mr-1" /> Активен
+                            </>
+                          ) : (
+                            <>
+                              <ShieldOff size={12} className="mr-1" />
+                              {ownerBlock ? "Блок · админ" : "Блок"}
+                            </>
+                          )}
+                        </button>
+                      );
+                    })()}
                   </td>
                 </tr>
                 {expanded === c.id && (

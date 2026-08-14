@@ -91,6 +91,11 @@ model User {
   discountPercent Int  @default(0) // персональная скидка клиента, %
   comment      String?
   isActive     Boolean @default(true)
+  // Кем поставлена блокировка. Заблокировал владелец (ADMIN/RA) — снять её
+  // может только владелец: иначе менеджер тут же включал клиента обратно.
+  // null = либо активен, либо заблокирован автоматикой за долг (её снимает
+  // и менеджер: он же и разбирается с оплатой).
+  blockedByRole Role?
   debtSince    DateTime? // с какого момента баланс ушёл в минус (для автоблокировки)
 
   // Manager ↔ Client self-relation: a CLIENT references its MANAGER
