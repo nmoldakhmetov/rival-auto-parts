@@ -1,10 +1,9 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
-import { Megaphone, ArrowLeft } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Catalog from "@/components/Catalog";
+import BroadcastBanner from "@/components/BroadcastBanner";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Рассылка — Rival Auto Parts" };
@@ -62,29 +61,13 @@ export default async function BroadcastPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Broadcast banner */}
-      <div className="border-b border-line bg-white px-6 py-4">
-        <Link
-          href="/catalog"
-          className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-muted transition-colors hover:text-accent"
-        >
-          <ArrowLeft size={13} /> В общий каталог
-        </Link>
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
-            <Megaphone size={19} />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold leading-tight text-ink">
-              {b.title || "Рассылка"}
-            </h1>
-            <div className="mt-0.5 text-[11px] text-muted">{date}</div>
-            <p className="mt-1.5 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-ink/85">
-              {b.text}
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* Компактная шапка рассылки: на телефоне она вместе с шапкой каталога
+          съедала пол-экрана, а товары начинались за сгибом. */}
+      <BroadcastBanner
+        title={b.title || "Рассылка"}
+        date={date}
+        text={b.text ?? ""}
+      />
 
       {/* The broadcast's products with the FULL catalog experience */}
       <div className="min-h-0 flex-1">

@@ -71,7 +71,13 @@ function Dept({ d }: { d: (typeof DEPTS)["retail"] }) {
   );
 }
 
-export default function Header({ manager }: { manager?: Manager | null }) {
+export default function Header({
+  manager,
+  role,
+}: {
+  manager?: Manager | null;
+  role?: string | null;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const query = useSearch((s) => s.query);
@@ -289,8 +295,9 @@ export default function Header({ manager }: { manager?: Manager | null }) {
         <BroadcastBell />
 
         {/* Корзина: на телефоне до неё было не дотянуться из шапки — только
-            через боковое меню. На десктопе она есть в сайдбаре. */}
-        <CartButton />
+            через боковое меню. На десктопе она есть в сайдбаре. Персоналу
+            корзина не нужна вовсе: заказы оформляют только клиенты. */}
+        {role === "CLIENT" && <CartButton />}
 
         {/* Телефон с выпадашкой — на десктопе тут, на телефоне в верхней
             строке рядом с логотипом. */}

@@ -849,7 +849,9 @@ export default function Catalog({
       {/* Slim header (the search lives in the global Header now) */}
       <div className="flex items-center justify-between gap-2 border-b border-line bg-white px-4 py-3 sm:gap-4 sm:px-6">
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-bold text-ink">
+          {/* На телефоне 2xl обрезался многоточием уже на «Товары расс…» —
+              заголовок должен помещаться, а не намекать на себя. */}
+          <h1 className="truncate text-lg font-bold text-ink sm:text-2xl">
             {heading ?? "Каталог запчастей"}
           </h1>
           <p className="truncate text-xs text-muted">

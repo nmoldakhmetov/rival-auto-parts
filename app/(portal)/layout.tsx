@@ -64,7 +64,7 @@ export default async function PortalLayout({
         balance={balance}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header manager={manager} />
+        <Header manager={manager} role={session.role} />
         <main className="min-h-0 flex-1 overflow-auto bg-[#f3f4f6]">
           {children}
         </main>
