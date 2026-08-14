@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { useCart } from "@/store/cart";
+import { useFavorites } from "@/store/favorites";
 import { useUi } from "@/store/ui";
 import { formatTenge } from "@/lib/format";
 import {
@@ -132,6 +133,20 @@ export default function Sidebar({
 
   // Модалка смены своего пароля (доступна из блока пользователя).
   const [pwdOpen, setPwdOpen] = useState(false);
+
+  // Избранное: счётчик такой же, как у корзины. Значение держит общий стор —
+  // каталог и страница избранного пишут туда сразу при клике по сердечку,
+  // поэтому значок не ждёт перезагрузки. Здесь только первичная загрузка (и
+  // сверка при переходах, если вкладка провисела открытой).
+  const favCount = useFavorites((s) => s.count);
+  const setFavCount = useFavorites((s) => s.setCount);
+  useEffect(() => {
+    if (role !== "CLIENT") return;
+    fetch("/api/favorites")
+      .then((r) => r.json())
+      .then((d) => setFavCount((d.ids ?? []).length))
+      .catch(() => {});
+  }, [role, pathname, setFavCount]);
 
   // Заказы, состав которых поправил менеджер, а клиент их ещё не открывал.
   // Опрашиваем при монтировании и при смене маршрута: зайдя в «Мои заказы»,
@@ -317,7 +332,12 @@ export default function Sidebar({
                 badge={mounted && count > 0 ? count : undefined}
                 giftUnits={mounted && giftUnits > 0 ? giftUnits : undefined}
               />
-              <NavLink href="/favorites" label="Избранное" Icon={Heart} />
+              <NavLink
+                href="/favorites"
+                label="Избранное"
+                Icon={Heart}
+                badge={mounted && favCount > 0 ? favCount : undefined}
+              />
               {/* «Возвраты» живут вкладкой внутри «Моих заказов».
                   Счётчик — заказы, состав которых поправил менеджер и клиент
                   их ещё не открывал: правку нельзя пропустить. */}

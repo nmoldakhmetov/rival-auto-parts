@@ -27,7 +27,9 @@ export default async function SearchLogsPage({
   const [clients, logs] = await Promise.all([
     prisma.user.findMany({
       where: { role: "CLIENT", ...(mgrId ? { managerId: mgrId } : {}) },
-      select: { id: true, fullName: true, login: true },
+      // Город идёт в подпись: у оптовиков много похожих названий, и он
+      // помогает отличить их в поиске.
+      select: { id: true, fullName: true, login: true, city: true },
       orderBy: { fullName: "asc" },
     }),
     prisma.searchLog.findMany({

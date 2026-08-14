@@ -19,6 +19,7 @@ import {
   Maximize2,
 } from "lucide-react";
 import { useCart, cartKey, itemKey } from "@/store/cart";
+import { useFavorites } from "@/store/favorites";
 import { useSearch } from "@/store/search";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
@@ -417,6 +418,7 @@ export default function Catalog({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const setFavCount = useFavorites((s) => s.setCount);
 
   // Gift promos: rules (trigger→banner) + gift product cards (for the preview).
   const [giftRules, setGiftRules] = useState<
@@ -522,14 +524,18 @@ export default function Catalog({
       .catch(() => setModels([]));
   }, [make]);
 
-  // Load favorites (clients only).
+  // Load favorites (clients only). Заодно питаем счётчик в меню.
   useEffect(() => {
     if (role !== "CLIENT") return;
     fetch("/api/favorites")
       .then((r) => r.json())
-      .then((d) => setFavorites(new Set<string>(d.ids ?? [])))
+      .then((d) => {
+        const ids = new Set<string>(d.ids ?? []);
+        setFavorites(ids);
+        setFavCount(ids.size);
+      })
       .catch(() => {});
-  }, [role]);
+  }, [role, setFavCount]);
 
   // Load active gift promos once (trigger banners + gift card preview).
   useEffect(() => {
@@ -548,6 +554,8 @@ export default function Catalog({
       const next = new Set(s);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      // Значок в меню меняется тут же, не дожидаясь ответа сервера.
+      setFavCount(next.size);
       return next;
     });
     toast.success(

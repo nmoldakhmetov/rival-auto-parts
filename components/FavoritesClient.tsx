@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Heart } from "lucide-react";
 import { useCart } from "@/store/cart";
+import { useFavorites } from "@/store/favorites";
 import { formatTenge, formatDiscount } from "@/lib/format";
 import { visibleCategory } from "@/lib/categories";
 import { isPairOnly, snapPairQty, PAIR_STEP } from "@/lib/pair-only";
@@ -52,6 +53,7 @@ function ProductThumb({ src, alt }: { src: string | null; alt: string }) {
 // item from the list.
 export default function FavoritesClient({ role }: { role: Role }) {
   const [rows, setRows] = useState<CatalogRow[]>([]);
+  const setFavCount = useFavorites((s) => s.setCount);
   const [loading, setLoading] = useState(true);
   const [discountDisplay, setDiscountDisplay] = useState("percent");
   const [whTooltip, setWhTooltip] = useState("");
@@ -76,15 +78,21 @@ export default function FavoritesClient({ role }: { role: Role }) {
       .then((r) => r.json())
       .then((d) => {
         setRows(d.rows ?? []);
+        setFavCount((d.rows ?? []).length);
         if (d.discountDisplay) setDiscountDisplay(d.discountDisplay);
         if (d.warehouseTooltip) setWhTooltip(d.warehouseTooltip);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [setFavCount]);
 
   function removeFavorite(id: string) {
-    setRows((rs) => rs.filter((r) => r.id !== id));
+    setRows((rs) => {
+      const next = rs.filter((r) => r.id !== id);
+      // Значок в меню гаснет вместе со строкой.
+      setFavCount(next.length);
+      return next;
+    });
     toast.success("Убрано из избранного");
     fetch("/api/favorites", {
       method: "POST",
