@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { recalcUserBalance } from "@/lib/balance";
+import { dispatchOrder } from "@/lib/order-dispatch";
 import { KaspiError, isFinalStatus, paymentStatus } from "@/lib/kaspi";
 import type { KaspiPaymentStatus } from "@prisma/client";
 
@@ -81,10 +82,20 @@ export async function GET(
       });
       await recalcUserBalance(order.userId, tx);
     });
+
+    // Только теперь заказ уходит наружу: в 1С, менеджеру на почту и в
+    // Telegram. До оплаты его там быть не должно — иначе склад начнёт
+    // собирать заказ, за который не заплатили.
+    const dispatched = await dispatchOrder(payment.orderId).catch((e) => {
+      console.error(`[kaspi] Заказ ${payment.orderId}: отправка не удалась — ${e}`);
+      return { onecOk: false, mailOk: false, telegramOk: false };
+    });
+
     return NextResponse.json({
       status,
       paid: true,
       transactionId: info.transactionId,
+      onecSent: dispatched.onecOk,
     });
   }
 

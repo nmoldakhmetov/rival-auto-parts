@@ -5,19 +5,13 @@ import { buildWaLink } from "@/lib/whatsapp";
 import { formatTenge } from "@/lib/format";
 import { getDiscountContext } from "@/lib/pricing";
 import { recalcUserBalance } from "@/lib/balance";
-import {
-  warehouseOptionsFor,
-  pickWarehouse,
-  groupByWarehouse,
-} from "@/lib/order-warehouses";
+import { warehouseOptionsFor, pickWarehouse } from "@/lib/order-warehouses";
 import { formatAddress } from "@/lib/addresses";
-import { buildOneCComment, sendOrderToOneC } from "@/lib/onec-orders";
+import { dispatchOrder } from "@/lib/order-dispatch";
 import { getActiveGiftRules } from "@/lib/gifts";
 import { earnedGiftQty } from "@/lib/gift-earn";
 import { isPairOnly, snapPairQty } from "@/lib/pair-only";
 import { productTitle } from "@/lib/product-title";
-import { sendOrderMail } from "@/lib/mail";
-import { sendOrderTelegram } from "@/lib/telegram";
 import {
   isPaymentMethod,
   isDeliveryMethod,
@@ -285,82 +279,19 @@ export async function POST(req: NextRequest) {
   const manager = me?.manager ?? null;
   const orderNo = order.id.slice(-6).toUpperCase();
 
-  // Push the order to 1С (best-effort: the order is already saved locally).
-  //
-  // Товары с разных складов уходят РАЗНЫМИ документами — по одному на склад:
-  // на «БК склад» и «БК склад 2» заказ собирают разные люди, и общая заявка
-  // им не годится. Когда склад один (обычный случай), уходит ровно один
-  // документ с прежним номером — поведение не меняется.
-  const whGroups = groupByWarehouse(onecProducts, (p) => p.warehouse);
-  const split = whGroups.length > 1;
-  const onecResults: { warehouse: string | null; ok: boolean; number?: string; error?: string }[] =
-    [];
-
-  for (const [idx, group] of whGroups.entries()) {
-    // Номер документа: при разбивке — с суффиксом, иначе 1С может посчитать
-    // документы одним заказом и перезаписать предыдущий.
-    const siteOrderId = split ? `${orderNo}-${idx + 1}` : orderNo;
-    const res = await sendOrderToOneC({
-      site_order_id: siteOrderId,
-      client_name: me?.fullName ?? "",
-      client_phone: me?.phone ?? "",
-      warehouse: group.warehouse,
-      // Склад в комментарий НЕ пишем — он едет отдельным полем `warehouse`,
-      // а в комментарии заказчику нужен только адрес и его собственный текст.
-      comment: buildOneCComment({
-        pickup: deliveryMethod === "PICKUP",
-        deliveryAddress,
-        comment: body.comment,
-      }),
-      products: group.lines.map((l) => ({
-        code: l.code,
-        sku: l.sku,
-        qty: l.qty,
-        price: l.price,
-        // Дублируем склад в строке — 1С заполняет по нему «Со склада».
-        warehouse: l.warehouse,
-      })),
-    });
-    onecResults.push({
-      warehouse: group.warehouse,
-      ok: res.ok,
-      number: res.orderNumber,
-      error: res.error,
-    });
-    if (!res.ok) {
-      console.warn(
-        `[1c] Заказ №${siteOrderId} (склад «${group.warehouse ?? "не определён"}»): НЕ отправлен — ${res.error ?? "причина неизвестна"}`
-      );
-    }
-  }
-
-  const onecOk = onecResults.every((r) => r.ok);
-  const onecNumbers = onecResults
-    .filter((r) => r.ok && r.number)
-    .map((r) => r.number as string);
-  if (onecNumbers.length > 0 || onecOk) {
-    await prisma.order
-      .update({
-        where: { id: order.id },
-        data: {
-          onecSent: onecOk,
-          onecNumber: onecNumbers.length > 0 ? onecNumbers.join(", ") : null,
-        },
-      })
-      .catch(() => {});
-  }
-  if (split) {
-    console.log(
-      `[1c] Заказ №${orderNo} разбит по складам на ${whGroups.length} док.: ` +
-        onecResults
-          .map(
-            (r) =>
-              `${r.warehouse ?? "без склада"} — ${r.ok ? r.number ?? "ok" : "ошибка"}`
-          )
-          .join("; ")
-    );
-  }
-  const onec = { ok: onecOk };
+  // Отправка наружу (1С, письмо, Telegram) вынесена в lib/order-dispatch,
+  // потому что её момент зависит от способа оплаты:
+  //   • наличные / перевод — сразу, как было всегда;
+  //   • Kaspi Pay — только после успешной оплаты (её проводит роут статуса
+  //     платежа). Неоплаченный заказ в 1С не нужен: там его начнут собирать,
+  //     а денег нет.
+  const deferred = paymentMethod === "KASPI";
+  const dispatched = deferred
+    ? { onecOk: false, mailOk: false, telegramOk: false }
+    : await dispatchOrder(order.id).catch((e) => {
+        console.error(`[order] Заказ ${orderNo}: отправка не удалась — ${e}`);
+        return { onecOk: false, mailOk: false, telegramOk: false };
+      });
 
   // Big orders would blow past URL limits (~2K chars) and break the wa.me
   // link entirely — cap the message; the full order is always in the portal.
@@ -389,112 +320,17 @@ export async function POST(req: NextRequest) {
 
   const waLink = manager?.phone ? buildWaLink(manager.phone, text) : null;
 
-  // «Направление» в письме — склад, с которого позиция реально заказана
-  // (выбор клиента или авто-подстановка). Раньше сюда шли ВСЕ склады с
-  // остатком, и менеджер не понимал, откуда везти.
-  const whByProduct = new Map<string, string[]>();
-  for (const i of orderItems) {
-    if (i.warehouse) whByProduct.set(i.productId, [i.warehouse]);
-  }
-
-  // Notify the assigned manager by e-mail. Best-effort: a mail outage must
-  // never fail an order that is already saved and pushed to 1С.
-  const mail = await sendOrderMail({
-    orderNo,
-    createdAt: order.createdAt,
-    total,
-    paymentMethod,
-    deliveryMethod,
-    comment: body.comment?.trim() || null,
-    client: {
-      fullName: me?.fullName ?? "",
-      login: me?.login ?? "",
-      email: me?.email ?? null,
-      phone: me?.phone ?? null,
-      // В письме и в Telegram — адрес, ВЫБРАННЫЙ при оформлении, а не тот,
-      // что записан в карточке: у клиента адресов может быть несколько.
-      city: null,
-      address: deliveryAddress ?? formatAddress({ city: me?.city, address: me?.address }),
-    },
-    manager: manager
-      ? { fullName: manager.fullName, email: manager.email }
-      : null,
-    items: orderItems.map((i) => ({
-      sku: i.sku,
-      name: i.name,
-      qty: i.qty,
-      price: i.price,
-      isGift: i.isGift,
-      warehouses: whByProduct.get(i.productId) ?? [],
-    })),
-  }).catch((e) => ({ ok: false, error: String(e) }));
-
-  // Письмо — best-effort, но молчать о сбое нельзя: без этой строки в логах
-  // «почта не работает» невозможно отличить от «SMTP не настроен» или «у
-  // менеджера не заполнен e-mail».
-  if (mail.ok) {
-    console.log(
-      `[mail] Заказ №${orderNo}: письмо отправлено на ${manager?.email ?? process.env.ORDER_MAIL_TO}`
-    );
-  } else {
-    console.warn(
-      `[mail] Заказ №${orderNo}: письмо НЕ отправлено — ${mail.error ?? "причина неизвестна"}` +
-        (manager
-          ? ` (менеджер «${manager.fullName}», e-mail: ${manager.email ?? "не заполнен"})`
-          : " (за клиентом не закреплён менеджер)")
-    );
-  }
-
-  // Telegram-уведомление менеджеру — тоже best-effort и с логом причины.
-  const mailItems = orderItems.map((i) => ({
-    sku: i.sku,
-    name: i.name,
-    qty: i.qty,
-    price: i.price,
-    isGift: i.isGift,
-    warehouses: whByProduct.get(i.productId) ?? [],
-  }));
-  const tg = await sendOrderTelegram(
-    {
-      orderNo,
-      total,
-      paymentMethod,
-      deliveryMethod,
-      comment: body.comment?.trim() || null,
-      client: {
-        fullName: me?.fullName ?? "",
-        login: me?.login ?? "",
-        email: me?.email ?? null,
-        phone: me?.phone ?? null,
-        city: me?.city ?? null,
-        address: me?.address ?? null,
-      },
-      manager: manager
-        ? { fullName: manager.fullName, telegramId: manager.telegramId }
-        : null,
-    },
-    mailItems
-  ).catch((e) => ({ ok: false, error: String(e) }));
-
-  if (tg.ok) {
-    console.log(
-      `[telegram] Заказ №${orderNo}: отправлено менеджеру «${manager?.fullName ?? "—"}»`
-    );
-  } else {
-    console.warn(
-      `[telegram] Заказ №${orderNo}: НЕ отправлено — ${tg.error ?? "причина неизвестна"}`
-    );
-  }
-
   return NextResponse.json({
     ok: true,
     orderId: order.id,
     orderNo,
     total,
     waLink,
-    onecSent: onec.ok,
-    mailSent: mail.ok,
-    telegramSent: tg.ok,
+    // У Kaspi-заказа отправка отложена до оплаты — так и отвечаем.
+    onecSent: dispatched.onecOk,
+    mailSent: dispatched.mailOk,
+    telegramSent: dispatched.telegramOk,
+    dispatchDeferred: deferred,
     manager: manager
       ? { fullName: manager.fullName, phone: manager.phone }
       : null,
