@@ -77,6 +77,9 @@ const SECTION_PREFIX: { prefix: string; section: AdminSection }[] = [
   { prefix: "activity", section: "activity" },
   { prefix: "search-logs", section: "search-logs" },
   { prefix: "settings", section: "settings" },
+  // Подключение Kaspi Pay живёт в «Настройках» и правится там же: это
+  // реквизиты приёма денег, а не оформление витрины.
+  { prefix: "kaspi", section: "settings" },
 ];
 
 // Resolve the section for an admin path. Returns null for the bare /admin

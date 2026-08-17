@@ -26,6 +26,15 @@ enum Role {
 enum PaymentMethod {
   CASH // наличный расчёт
   TRANSFER // перевод
+  KASPI // онлайн-оплата через Kaspi Pay (QR или ссылка)
+}
+
+// Состояние покупки в Kaspi (Приложение 4 их документации).
+enum KaspiPaymentStatus {
+  QrTokenCreated // QR/ссылка созданы, клиент ещё не начал
+  Wait // клиент отсканировал QR или открыл ссылку
+  Processed // оплачено
+  Error // отменено клиентом, ошибка или истёк срок
 }
 
 // Способ получения заказа.
@@ -113,6 +122,7 @@ model User {
   productViews        ProductView[]
   broadcastRecipients BroadcastRecipient[]
   discountRules       DiscountRule[]      @relation("UserDiscountRules")
+  kaspiPayments       KaspiPayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -248,14 +258,49 @@ model Order {
   // потом меняется — в заказе должен остаться тот, что выбрали.
   deliveryAddress String?
 
-  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items OrderItem[]
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items    OrderItem[]
+  payments KaspiPayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([status])
+}
+
+// Онлайн-оплата заказа через Kaspi Pay.
+//
+// Одна попытка оплаты = одна покупка в Kaspi. Попыток у заказа может быть
+// несколько (истёк QR, клиент отменил), поэтому это отдельная таблица, а не
+// поля в заказе; в заказ ложится только результат (paid).
+model KaspiPayment {
+  id      String @id @default(cuid())
+  orderId String
+  userId  String? // кто платил (для скоупа менеджера в админке)
+
+  // Идентификатор покупки на стороне Kaspi (Int64). Строкой: по нему идут
+  // запросы статуса, а арифметика с ним не нужна.
+  kaspiPaymentId String
+  // "qr" — клиент сканирует QR с экрана, "link" — открывает приложение по ссылке.
+  mode           String
+  amount         Decimal            @db.Decimal(12, 2)
+  status         KaspiPaymentStatus @default(QrTokenCreated)
+  qrToken        String? // содержимое QR-кода
+  paymentLink    String? // ссылка в приложение Kaspi
+  expiresAt      DateTime? // после этого момента QR/ссылка недействительны
+  transactionId  String? // номер успешной транзакции Kaspi
+  productType    String? // чем оплатили: Gold / Red / Loan / BusinessAccount
+  error          String? // текст последней ошибки, если она была
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([kaspiPaymentId])
 }
 
 // Адреса доставки клиента. У оптовика их обычно несколько (склад, офис,

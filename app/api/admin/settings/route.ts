@@ -5,8 +5,14 @@ import { invalidatePrefix } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
+// Токен устройства Kaspi форме настроек не нужен, а по сети лишний раз ходить
+// ему незачем: подключением занимается отдельный раздел (/api/admin/kaspi).
+const HIDDEN_KEYS = ["kaspi_device_token", "kaspi_trade_point"];
+
 export async function GET() {
-  const settings = await getSettings(Object.keys(DEFAULTS));
+  const settings = await getSettings(
+    Object.keys(DEFAULTS).filter((k) => !HIDDEN_KEYS.includes(k))
+  );
   return NextResponse.json({ settings });
 }
 

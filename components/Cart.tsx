@@ -25,6 +25,7 @@ import { earnedGiftQty, type GiftRuleLite as GiftRule } from "@/lib/gift-earn";
 import EmptyState from "@/components/EmptyState";
 import CartQtySelector from "@/components/CartQtySelector";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import KaspiPayment from "@/components/KaspiPayment";
 import {
   PAYMENT_OPTIONS,
   DELIVERY_OPTIONS,
@@ -125,6 +126,13 @@ export default function Cart({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<CheckoutResult | null>(null);
+  // Онлайн-оплата Kaspi: способ показывается, только если её подключили в
+  // админке. После оформления с этим способом открывается экран оплаты.
+  const [kaspiReady, setKaspiReady] = useState(false);
+  const [payFor, setPayFor] = useState<{ orderId: string; amount: number } | null>(
+    null
+  );
+  const [paidOnline, setPaidOnline] = useState(false);
   // «Оформить заказ» opens a confirmation dialog first — no accidental orders.
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Массовое удаление тоже спрашивает подтверждение: промах по кнопке рядом
@@ -170,6 +178,13 @@ export default function Cart({
         if (d?.warehouses) setWhStock(d.warehouses);
         if (d?.prices) useCart.getState().updatePrices(d.prices);
       })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/payments/kaspi")
+      .then((r) => r.json())
+      .then((d) => setKaspiReady(Boolean(d?.ready)))
       .catch(() => {});
   }, []);
 
@@ -254,6 +269,12 @@ export default function Cart({
       });
       // Из корзины уходят только оформленные позиции — невыбранные остаются.
       removeMany(ordered);
+      if (paymentMethod === "KASPI") {
+        // Оплата — шаг оформления: заказ уже создан и виден менеджеру, а
+        // экран оплаты открывается поверх экрана «заказ оформлен».
+        setPayFor({ orderId: data.orderId, amount: data.total });
+        return;
+      }
       // Auto-open WhatsApp if we have a link.
       if (data.waLink) window.open(data.waLink, "_blank");
     } catch {
@@ -300,6 +321,25 @@ export default function Cart({
     );
   }
 
+  // ─── Экран оплаты Kaspi ────────────────────────────────────────────────
+  // Заказ уже создан: что бы ни случилось с оплатой, он не теряется, и
+  // менеджер его видит. Поэтому «не получилось» — это возврат на экран
+  // «заказ оформлен», а не откат корзины.
+  if (payFor) {
+    return (
+      <KaspiPayment
+        orderId={payFor.orderId}
+        amount={payFor.amount}
+        onPaid={() => {
+          setPaidOnline(true);
+          setPayFor(null);
+          if (done?.waLink) window.open(done.waLink, "_blank");
+        }}
+        onGiveUp={() => setPayFor(null)}
+      />
+    );
+  }
+
   // ─── Success screen ────────────────────────────────────────────────────
   if (done) {
     return (
@@ -309,9 +349,15 @@ export default function Cart({
           Заказ №{done.orderNo} оформлен
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Заказ сохранён. Отправьте его менеджеру в WhatsApp для подтверждения —
-          оплата на портале не требуется.
+          {paidOnline
+            ? "Оплата через Kaspi прошла. Отправьте заказ менеджеру в WhatsApp — он подтвердит отгрузку."
+            : "Заказ сохранён. Отправьте его менеджеру в WhatsApp для подтверждения — оплата на портале не требуется."}
         </p>
+        {paidOnline && (
+          <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+            <CheckCircle2 size={13} /> Оплачено через Kaspi
+          </div>
+        )}
 
         <div className="mt-6 rounded-lg border border-line bg-white p-5">
           {done.waLink ? (
@@ -760,19 +806,73 @@ export default function Cart({
               <label className="mb-1 block text-[11px] font-semibold text-ink">
                 Способ оплаты
               </label>
-              <select
-                value={paymentMethod}
-                onChange={(e) =>
-                  setPaymentMethod(e.target.value as PaymentMethod)
-                }
-                className="input"
-              >
-                {PAYMENT_OPTIONS.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              {/* Два пути: как раньше — через менеджера (наличные или
+                  перевод), и онлайн через Kaspi. Второй появляется, только
+                  когда оплата подключена в админке. */}
+              {kaspiReady && (
+                <div className="mb-2 grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={paymentMethod !== "KASPI"}
+                    onClick={() =>
+                      setPaymentMethod((m) => (m === "KASPI" ? "CASH" : m))
+                    }
+                    className={cx(
+                      "rounded-lg border p-2.5 text-left transition-colors",
+                      paymentMethod !== "KASPI"
+                        ? "border-accent bg-accent/5"
+                        : "border-line hover:border-gray-300"
+                    )}
+                  >
+                    <div className="text-sm font-semibold text-ink">
+                      Через менеджера
+                    </div>
+                    <div className="text-[11px] leading-snug text-muted">
+                      Наличными или переводом — как обычно
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={paymentMethod === "KASPI"}
+                    onClick={() => setPaymentMethod("KASPI")}
+                    className={cx(
+                      "rounded-lg border p-2.5 text-left transition-colors",
+                      paymentMethod === "KASPI"
+                        ? "border-[#F14635] bg-[#F14635]/5"
+                        : "border-line hover:border-gray-300"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                      <span className="text-[#F14635]">Kaspi Pay</span>
+                    </div>
+                    <div className="text-[11px] leading-snug text-muted">
+                      Оплатить сразу онлайн
+                    </div>
+                  </button>
+                </div>
+              )}
+              {paymentMethod === "KASPI" ? (
+                <p className="text-[11px] leading-snug text-muted">
+                  После оформления откроется оплата: на телефоне — приложение
+                  Kaspi.kz, на компьютере — QR-код для сканирования.
+                </p>
+              ) : (
+                <select
+                  value={paymentMethod}
+                  onChange={(e) =>
+                    setPaymentMethod(e.target.value as PaymentMethod)
+                  }
+                  className="input"
+                >
+                  {PAYMENT_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-[11px] font-semibold text-ink">
@@ -915,7 +1015,12 @@ export default function Cart({
               `Позиций — ${selected.length}` +
               (allChecked ? "" : ` из ${items.length} (остальные останутся в корзине)`) +
               `, сумма — ${formatTenge(total)}. ` +
-              `Оплата: ${PAYMENT_LABELS[paymentMethod].toLowerCase()}, ` +
+              // Kaspi Pay — имя, а не слово: строчными оно выглядит опечаткой.
+              `Оплата: ${
+                paymentMethod === "KASPI"
+                  ? PAYMENT_LABELS.KASPI
+                  : PAYMENT_LABELS[paymentMethod].toLowerCase()
+              }, ` +
               `получение: ${DELIVERY_LABELS[deliveryMethod].toLowerCase()}.`
             }
             confirmLabel="Да"

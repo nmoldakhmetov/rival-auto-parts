@@ -52,6 +52,18 @@ export async function GET(
           address: true,
         },
       },
+      // Онлайн-оплаты по заказу: менеджеру важно видеть, что деньги уже
+      // пришли, и по какому номеру транзакции их искать в Kaspi.
+      payments: {
+        where: { status: "Processed" },
+        orderBy: { createdAt: "desc" },
+        select: {
+          amount: true,
+          transactionId: true,
+          productType: true,
+          createdAt: true,
+        },
+      },
     },
   });
   if (!order) {
@@ -75,6 +87,13 @@ export async function GET(
       // Правка состава менеджером (см. items/route.ts).
       editedAt: order.editedAt,
       editNote: order.editNote,
+      paymentMethod: order.paymentMethod,
+      kaspiPayments: order.payments.map((p) => ({
+        amount: Number(p.amount),
+        transactionId: p.transactionId,
+        productType: p.productType,
+        createdAt: p.createdAt,
+      })),
       client: order.user,
       items: order.items.map((i) => ({
         id: i.id,

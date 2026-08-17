@@ -1,5 +1,6 @@
 import SettingsForm from "@/components/admin/SettingsForm";
 import WarehouseColors from "@/components/admin/WarehouseColors";
+import KaspiPaySettings from "@/components/admin/KaspiPaySettings";
 import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,12 @@ export default async function AdminSettingsPage() {
       <h1 className="mb-1 text-xl font-bold text-ink">Настройки</h1>
       <p className="mb-5 text-xs text-muted">Тексты и параметры портала.</p>
       <SettingsForm />
+      {/* Приём онлайн-оплаты: реквизиты Kaspi Pay правит только владелец. */}
+      {session?.role === "ADMIN" && (
+        <div className="mt-5 max-w-2xl">
+          <KaspiPaySettings />
+        </div>
+      )}
       <div className="mt-5">
         <WarehouseColors canEdit={canEdit} />
       </div>

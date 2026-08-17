@@ -16,6 +16,7 @@ import {
   ExternalLink,
   PencilLine,
   Maximize2,
+  CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatTenge, formatDateTime } from "@/lib/format";
@@ -74,6 +75,14 @@ type OrderDetails = {
   // Правка состава: когда правили и что написали клиенту.
   editedAt: string | null;
   editNote: string | null;
+  paymentMethod?: string;
+  // Прошедшие онлайн-оплаты Kaspi по этому заказу.
+  kaspiPayments?: {
+    amount: number;
+    transactionId: string | null;
+    productType: string | null;
+    createdAt: string;
+  }[];
   client: {
     fullName: string;
     login: string;
@@ -559,6 +568,18 @@ export default function OrdersAdmin() {
                                 <b className="text-amber-700">не отправлен</b>
                               )}
                             </span>
+                            {/* Онлайн-оплата: менеджеру важно, что деньги уже
+                                пришли, и по какому номеру их искать в Kaspi. */}
+                            {(details[r.id].kaspiPayments ?? []).map((p) => (
+                              <span
+                                key={p.transactionId ?? p.createdAt}
+                                className="flex items-center gap-1 font-semibold text-green-700"
+                              >
+                                <CheckCircle2 size={13} /> оплачено через Kaspi:{" "}
+                                {formatTenge(p.amount)}
+                                {p.transactionId ? ` · №${p.transactionId}` : ""}
+                              </span>
+                            ))}
                           </div>
 
                           <div className="overflow-hidden rounded-lg border border-line bg-white">
