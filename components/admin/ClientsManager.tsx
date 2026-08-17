@@ -31,6 +31,7 @@ import DiscountPill, {
   type DiscountSummaryLite,
 } from "@/components/admin/DiscountPill";
 import AddressesEditor from "@/components/admin/AddressesEditor";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { toast } from "@/store/toast";
 
 type ClientRow = {
@@ -620,6 +621,10 @@ export default function ClientsManager({
   const [managers, setManagers] = useState(initialManagers);
   const [staff, setStaff] = useState(initialStaff);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Выделение строк для массовой правки оплаты (см. панель над таблицей).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<{ enabled: boolean } | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [tab, setTab] = useState<Tab>("CLIENT");
   // ACCOUNTANT has the clients tab but is read-only (no account creation).
@@ -689,6 +694,21 @@ export default function ClientsManager({
   const pageRows = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
   const filtersActive = !!(q || fCountry || fRegion || fCity);
 
+  // Выделение: галочка в шапке работает по текущей странице, кнопка рядом —
+  // по всем строкам, что подошли под фильтр (их могут быть сотни).
+  const pageAllSelected =
+    pageRows.length > 0 && pageRows.every((c) => selected.has(c.id));
+  const pageSomeSelected = pageRows.some((c) => selected.has(c.id));
+  const togglePage = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (pageAllSelected) pageRows.forEach((c) => next.delete(c.id));
+      else pageRows.forEach((c) => next.add(c.id));
+      return next;
+    });
+  const selectAllFiltered = () =>
+    setSelected(new Set(filtered.map((c) => c.id)));
+
   // Смена фильтра возвращает на первую страницу, иначе можно «зависнуть»
   // на несуществующей.
   useEffect(() => {
@@ -754,6 +774,50 @@ export default function ClientsManager({
   // Бухгалтер видит раздел, но ничего не правит — сервер ему всё равно
   // ответит отказом, поэтому галочка у него неактивна.
   const canEditClients = viewerRole !== "ACCOUNTANT";
+
+  // Массовая правка оплаты. На проде клиентов сотни, и отмечать по одному
+  // невозможно: строки выделяются галочками, а действие применяется сразу ко
+  // всем выделенным — хоть ко всем, кто подошёл под фильтр.
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  async function applyBulk(enabled: boolean) {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/admin/clients/kaspi-pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, enabled }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(d.error || "Не удалось изменить");
+        return;
+      }
+      const done = new Set(ids);
+      setClients((cs) =>
+        cs.map((c) => (done.has(c.id) ? { ...c, kaspiPayEnabled: enabled } : c))
+      );
+      setSelected(new Set());
+      toast.success(
+        enabled
+          ? `Оплата Kaspi разрешена: ${d.updated} клиент(ов)`
+          : `Оплата через менеджера: ${d.updated} клиент(ов)`
+      );
+    } catch {
+      toast.error("Сервер недоступен");
+    } finally {
+      setBulkBusy(false);
+      setBulk(null);
+    }
+  }
 
   async function toggleKaspiPay(client: ClientRow, next: boolean) {
     if (!canEditClients) return;
@@ -965,12 +1029,87 @@ export default function ClientsManager({
         )}
       </div>
 
+      {/* Панель массовой правки: появляется, как только что-то выделено. */}
+      {canEditClients && selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs">
+          <span className="font-semibold text-ink">
+            Выбрано: {selected.size}
+          </span>
+          {selected.size < filtered.length && (
+            <button
+              onClick={selectAllFiltered}
+              className="text-accent hover:underline"
+            >
+              выбрать все {filtered.length}
+              {filtersActive ? " по фильтру" : ""}
+            </button>
+          )}
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-muted hover:text-ink hover:underline"
+          >
+            снять выделение
+          </button>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setBulk({ enabled: true })}
+              disabled={bulkBusy}
+              className="btn-accent px-3 py-1.5 text-xs"
+            >
+              {bulkBusy ? <Loader2 size={13} className="animate-spin" /> : null}
+              Разрешить Kaspi
+            </button>
+            <button
+              onClick={() => setBulk({ enabled: false })}
+              disabled={bulkBusy}
+              className="btn-ghost px-3 py-1.5 text-xs"
+            >
+              Только через менеджера
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Массовое переключение спрашивает подтверждение: промах по кнопке
+          затронул бы сотни клиентов разом. */}
+      <ConfirmDialog
+        open={bulk !== null}
+        title={
+          bulk?.enabled ? "Разрешить оплату Kaspi" : "Вернуть оплату через менеджера"
+        }
+        text={
+          bulk?.enabled
+            ? `Клиенты (${selected.size}) смогут оплачивать заказы онлайн через Kaspi. Другие способы оплаты у них пропадут.`
+            : `Клиенты (${selected.size}) вернутся к оплате через менеджера — наличными или переводом.`
+        }
+        confirmLabel="Да"
+        cancelLabel="Нет"
+        onCancel={() => setBulk(null)}
+        onConfirm={() => bulk && applyBulk(bulk.enabled)}
+      />
+
       {/* overflow-x-auto, а не overflow-hidden: на телефоне таблицу нужно
           прокручивать вбок, иначе правые колонки недостижимы. */}
       <div className="overflow-x-auto rounded-lg border border-line bg-white">
         <table className="data-table min-w-[900px]">
           <thead>
             <tr>
+              {canEditClients && (
+                <th className="w-10">
+                  {/* Галочка в шапке выделяет строки ТЕКУЩЕЙ страницы —
+                      «все, кто под фильтром» отдельной кнопкой ниже. */}
+                  <input
+                    type="checkbox"
+                    aria-label="Выделить страницу"
+                    checked={pageAllSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = pageSomeSelected && !pageAllSelected;
+                    }}
+                    onChange={togglePage}
+                    className="h-4 w-4 accent-accent"
+                  />
+                </th>
+              )}
               <th>Клиент</th>
               <th>Контакты</th>
               <th className="w-48">Менеджер</th>
@@ -986,7 +1125,10 @@ export default function ClientsManager({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-12 text-center text-sm text-muted">
+                <td
+                  colSpan={canEditClients ? 9 : 8}
+                  className="py-12 text-center text-sm text-muted"
+                >
                   {clients.length === 0
                     ? "Клиентов пока нет."
                     : "Под фильтры никто не подошёл."}
@@ -995,7 +1137,18 @@ export default function ClientsManager({
             )}
             {pageRows.map((c) => (
               <Fragment key={c.id}>
-                <tr>
+                <tr className={selected.has(c.id) ? "bg-accent/5" : undefined}>
+                  {canEditClients && (
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`Выделить ${c.fullName}`}
+                        checked={selected.has(c.id)}
+                        onChange={() => toggleSelected(c.id)}
+                        className="h-4 w-4 accent-accent"
+                      />
+                    </td>
+                  )}
                   <td>
                     <div className="font-semibold text-ink">{c.fullName}</div>
                     <div className="text-[11px] text-muted">
@@ -1133,7 +1286,7 @@ export default function ClientsManager({
                 </tr>
                 {expanded === c.id && (
                   <tr>
-                    <td colSpan={8} className="bg-gray-50 p-4">
+                    <td colSpan={canEditClients ? 9 : 8} className="bg-gray-50 p-4">
                       <div className="grid gap-6 lg:grid-cols-2">
                         <AccessEditor
                           warehouses={warehouses}
