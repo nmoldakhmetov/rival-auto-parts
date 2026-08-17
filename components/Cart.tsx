@@ -844,10 +844,17 @@ export default function Cart({
                         : "border-line hover:border-gray-300"
                     )}
                   >
-                    <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-                      <span className="text-[#F14635]">Kaspi Pay</span>
-                    </div>
-                    <div className="text-[11px] leading-snug text-muted">
+                    {/* Логотип официальный (public/kaspi): правила Kaspi
+                        запрещают перерисовывать его самостоятельно. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/kaspi/kaspi-logo.svg"
+                      alt="Kaspi.kz"
+                      width={208}
+                      height={52}
+                      className="h-5 w-auto"
+                    />
+                    <div className="mt-1 text-[11px] leading-snug text-muted">
                       Оплатить сразу онлайн
                     </div>
                   </button>

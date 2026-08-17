@@ -30,9 +30,9 @@ export async function GET(
   const svg = await QRCode.toString(payment.qrToken, {
     type: "svg",
     margin: 1,
-    // Средний уровень коррекции: код остаётся читаемым, если экран бликует
-    // или его снимают под углом.
-    errorCorrectionLevel: "M",
+    // Высокий уровень коррекции: по правилам Kaspi поверх центра кода
+    // ложится их иконка, и код обязан читаться вместе с ней.
+    errorCorrectionLevel: "H",
     color: { dark: "#1f1f1f", light: "#ffffff" },
   });
 

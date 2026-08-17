@@ -1,26 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  CheckCircle2,
-  Loader2,
-  RefreshCw,
-  Smartphone,
-  TriangleAlert,
-} from "lucide-react";
 import { formatTenge } from "@/lib/format";
 
 // Экран онлайн-оплаты Kaspi Pay.
 //
-// Покупка в Kaspi создаётся ОДНА на попытку, и её вид выбирается до создания:
-// на телефоне — ссылка (открывает приложение Kaspi), на компьютере — QR
-// (клиент сканирует его своим телефоном). Поэтому режим определяется здесь,
-// один раз, и переключателя «а покажите другой» нет: он породил бы вторую
-// покупку на ту же сумму.
+// Вид экрана — не наша фантазия: Kaspi выдаёт гайд «Оплата с Kaspi.kz», где
+// блок с QR помечен «Обязательно», а состояния (загрузка, ожидание, успех,
+// ошибка) — «Рекомендовано». Оттуда же взяты официальные ассеты в
+// public/kaspi (их правила прямо запрещают перерисовывать кнопки и логотипы
+// самостоятельно). Что требует гайд и что здесь соблюдено:
+//   • QR не меньше 200dp, в центре — иконка Kaspi.kz (без неё нельзя),
+//     длиной ≥20% стороны кода и со своей зоной безопасности;
+//   • внутри блока ничего не менять: ни фон, ни размеры, ни способы оплаты;
+//   • кнопка оплаты — официальная, высотой ≥48dp и с ≥8dp свободного места
+//     вокруг;
+//   • элементы шаблона центрируются по вертикали и горизонтали.
 //
-// Дальше экран опрашивает статус с интервалом, который вернул Kaspi, и следит
-// за двумя сроками из их документации: сколько ждать сканирования/перехода и
-// сколько — подтверждения оплаты.
+// Покупка в Kaspi создаётся ОДНА на попытку, и её вид выбирается до создания:
+// на телефоне — ссылка (открывает приложение Kaspi), на компьютере — QR.
+// Поэтому переключателя «покажите другой» здесь нет: он породил бы вторую
+// покупку на ту же сумму.
 
 type Started = {
   id: string;
@@ -34,6 +34,12 @@ type Started = {
 };
 
 type Phase = "starting" | "waiting" | "scanned" | "paid" | "failed";
+
+// Сторона QR на экране. Гайд требует не меньше 200dp — берём с запасом,
+// чтобы код читался и с недорогой камеры.
+const QR_SIZE = 240;
+// Иконка Kaspi в центре: 24% стороны кода (минимум по гайду — 20%).
+const QR_MARK = Math.round(QR_SIZE * 0.24);
 
 export default function KaspiPayment({
   orderId,
@@ -106,8 +112,7 @@ export default function KaspiPayment({
         if (d.status === "Wait" && phase !== "scanned") {
           setPhase("scanned");
           // Второй срок: столько Kaspi ждёт подтверждения оплаты клиентом.
-          deadlineRef.current =
-            Date.now() + payment.confirmationTimeout * 1000;
+          deadlineRef.current = Date.now() + payment.confirmationTimeout * 1000;
         }
         if (d.status === "Error") {
           setError(d.error ?? "Оплата не завершена");
@@ -146,7 +151,7 @@ export default function KaspiPayment({
 
   useEffect(() => {
     if (phase === "paid") {
-      const t = setTimeout(onPaid, 1200);
+      const t = setTimeout(onPaid, 1600);
       return () => clearTimeout(t);
     }
   }, [phase, onPaid]);
@@ -154,113 +159,203 @@ export default function KaspiPayment({
   const mmss = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
+  // ─── Состояния из гайда ────────────────────────────────────────────────
+
   if (phase === "paid") {
     return (
-      <Frame>
-        <CheckCircle2 size={44} className="mx-auto mb-2 text-green-600" />
-        <h2 className="text-lg font-bold text-ink">Оплачено</h2>
-        <p className="mt-1 text-sm text-muted">
-          {formatTenge(amount)} получены. Отправляем заказ менеджеру…
-        </p>
-      </Frame>
+      <Card>
+        <div className="flex h-[104px] w-[104px] items-center justify-center rounded-full bg-[#E8F5D9]">
+          <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-[#8DC63F] text-white">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 12.5l5 5L20 7"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        </div>
+        <div className="mt-5 text-xl font-bold text-ink">Оплата принята</div>
+        <div className="mt-1 text-2xl font-bold tabular-nums text-ink">
+          {formatTenge(amount)}
+        </div>
+      </Card>
     );
   }
 
   if (phase === "failed") {
     return (
-      <Frame>
-        <TriangleAlert size={40} className="mx-auto mb-2 text-amber-500" />
-        <h2 className="text-lg font-bold text-ink">Оплата не прошла</h2>
-        <p className="mt-1 text-sm text-muted">{error}</p>
-        <p className="mt-3 text-xs text-muted">
-          Заказ уже оформлен и виден вашему менеджеру — оплатить можно и через
-          него.
-        </p>
-        <div className="mt-5 flex flex-wrap justify-center gap-2">
-          <button onClick={start} className="btn-accent">
-            <RefreshCw size={15} /> Попробовать снова
-          </button>
-          <button onClick={onGiveUp} className="btn-ghost">
-            Оплачу через менеджера
-          </button>
+      <>
+        <Card>
+          <div className="flex h-[104px] w-[104px] items-center justify-center rounded-full bg-gray-100">
+            <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-gray-500 text-white">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6 6l12 12M18 6L6 18"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+          </div>
+          <div className="mt-5 text-xl font-bold text-ink">Отмена покупки</div>
+          <p className="mt-1 text-sm text-muted">{error}</p>
+        </Card>
+        <div className="mx-auto mt-4 max-w-[420px] px-6 text-center">
+          <p className="text-xs text-muted">
+            Заказ уже оформлен и виден вашему менеджеру — оплатить можно и через
+            него.
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <button onClick={start} className="btn-accent">
+              Попробовать снова
+            </button>
+            <button onClick={onGiveUp} className="btn-ghost">
+              Оплачу через менеджера
+            </button>
+          </div>
         </div>
-      </Frame>
+      </>
     );
   }
 
+  // Загрузка QR-кода — состояние из набора элементов Kaspi.
   if (phase === "starting" || !payment) {
     return (
-      <Frame>
-        <Loader2 size={28} className="mx-auto mb-2 animate-spin text-muted" />
-        <p className="text-sm text-muted">Готовим оплату…</p>
-      </Frame>
+      <Card>
+        <div className="text-base font-bold text-ink">
+          Готовимся к приему оплаты
+        </div>
+        <Spinner />
+      </Card>
     );
   }
 
   return (
-    <Frame>
-      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-        Оплата через Kaspi
-      </div>
-      <div className="text-2xl font-bold tabular-nums text-ink">
-        {formatTenge(payment.amount)}
-      </div>
+    <>
+      <Card>
+        {/* Блок Kaspi QR: состав и порядок элементов менять нельзя. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/kaspi/kaspi-qr-lockup.svg"
+          alt="Kaspi QR — сканируйте и платите"
+          width={143}
+          height={60}
+        />
+        <div className="mt-3 text-[28px] font-bold leading-none tabular-nums text-ink">
+          {formatTenge(payment.amount)}
+        </div>
 
-      {payment.mode === "qr" ? (
-        <>
-          <div className="mx-auto mt-4 w-[228px] rounded-xl border border-line bg-white p-3">
+        {payment.mode === "qr" ? (
+          <div
+            className="relative mt-4"
+            style={{ width: QR_SIZE, height: QR_SIZE }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={`/api/payments/kaspi/${payment.id}/qr`}
-              alt="QR-код для оплаты в приложении Kaspi"
-              className="h-[200px] w-[200px]"
+              alt="QR-код для оплаты в приложении Kaspi.kz"
+              width={QR_SIZE}
+              height={QR_SIZE}
+            />
+            {/* Иконка Kaspi.kz в центре обязательна; она уже идёт со своей
+                зоной безопасности, поэтому просто кладём её поверх. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/kaspi/qr-mark.svg"
+              alt=""
+              width={QR_MARK}
+              height={QR_MARK}
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
             />
           </div>
-          <p className="mt-3 text-sm text-ink">
-            Откройте приложение <b>Kaspi.kz</b> на телефоне и отсканируйте код
-          </p>
-        </>
-      ) : (
-        <>
+        ) : (
           <a
             href={payment.paymentLink ?? "#"}
-            className="btn mt-4 w-full bg-[#F14635] text-white hover:brightness-95"
+            className="mt-4 block"
+            aria-label="Оплатить с Kaspi.kz"
           >
-            <Smartphone size={18} /> Оплатить в приложении Kaspi
+            {/* Официальная кнопка оплаты: перерисовывать её нельзя. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/kaspi/pay-button.svg"
+              alt="Оплатить с Kaspi.kz"
+              width={343}
+              height={52}
+              className="h-[52px] w-full max-w-[343px]"
+            />
           </a>
-          <p className="mt-3 text-sm text-muted">
-            Откроется приложение Kaspi.kz. Вернитесь на эту страницу — она сама
-            покажет, что оплата прошла.
-          </p>
-        </>
-      )}
-
-      <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted">
-        <Loader2 size={13} className="animate-spin" />
-        {phase === "scanned"
-          ? "Подтвердите оплату в приложении"
-          : "Ждём оплату"}
-        {secondsLeft != null && (
-          <span className="tabular-nums">· {mmss(secondsLeft)}</span>
         )}
-      </div>
 
-      <button
-        onClick={onGiveUp}
-        className="mt-4 text-xs font-semibold text-muted underline-offset-2 hover:text-ink hover:underline"
-      >
-        Оплачу позже через менеджера
-      </button>
-    </Frame>
+        <div className="mt-4 text-xs text-muted">Способы оплаты</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/kaspi/payment-methods.svg"
+          alt="Kaspi Gold, Kaspi Red"
+          width={89}
+          height={32}
+          className="mt-1.5"
+        />
+      </Card>
+
+      <div className="mx-auto mt-4 max-w-[420px] px-6 text-center">
+        <p className="text-sm text-ink">
+          {payment.mode === "qr"
+            ? "Откройте приложение Kaspi.kz на телефоне и отсканируйте код"
+            : "Откроется приложение Kaspi.kz. Вернитесь на эту страницу — она сама покажет, что оплата прошла."}
+        </p>
+        <div className="mt-2 flex items-center justify-center gap-2 text-xs text-muted">
+          <Spinner small />
+          {phase === "scanned" ? "Подтвердите оплату в приложении" : "Ждём оплату"}
+          {secondsLeft != null && (
+            <span className="tabular-nums">· {mmss(secondsLeft)}</span>
+          )}
+        </div>
+        <button
+          onClick={onGiveUp}
+          className="mt-3 text-xs font-semibold text-muted underline-offset-2 hover:text-ink hover:underline"
+        >
+          Оплачу позже через менеджера
+        </button>
+      </div>
+    </>
   );
 }
 
-function Frame({ children }: { children: React.ReactNode }) {
+// Карточка шаблона: белая, скруглённая, с тенью — как в наборе элементов
+// Kaspi. Содержимое центрируется по обеим осям, как они рекомендуют.
+function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto max-w-md px-6 py-10 text-center">
-      <div className="rounded-xl border border-line bg-white p-6 shadow-sm">
-        {children}
-      </div>
+    <div className="mx-auto mt-8 flex w-[min(320px,calc(100vw-2rem))] flex-col items-center justify-center rounded-[20px] bg-white px-4 py-7 text-center shadow-[0_4px_24px_rgba(0,0,0,0.08)]">
+      {children}
     </div>
+  );
+}
+
+// Фирменный красный лоадер Kaspi (незамкнутое кольцо).
+function Spinner({ small }: { small?: boolean }) {
+  const size = small ? 14 : 56;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 50 50"
+      className={small ? "animate-spin" : "mt-6 animate-spin"}
+      aria-hidden
+    >
+      <circle
+        cx="25"
+        cy="25"
+        r="20"
+        fill="none"
+        stroke="#F14635"
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeDasharray="95 30"
+      />
+    </svg>
   );
 }
