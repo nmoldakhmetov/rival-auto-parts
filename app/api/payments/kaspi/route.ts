@@ -18,12 +18,27 @@ export const dynamic = "force-dynamic";
 // сервере, из тела запроса она не принимается — иначе можно было бы оплатить
 // 100 000 ₸ заказ сотней тенге.
 
+// Онлайн-оплата доступна клиенту, только если ОБА условия сошлись: она
+// подключена в Настройках и конкретному клиенту её разрешили галочкой в
+// «Клиентах». По умолчанию галочки нет — платят через менеджера, как раньше.
+async function allowedFor(userId: string): Promise<boolean> {
+  if (!(await kaspiReady())) return false;
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { kaspiPayEnabled: true },
+  });
+  return Boolean(u?.kaspiPayEnabled);
+}
+
 export async function GET() {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.json({ ready: await kaspiReady() });
+  if (session.role !== "CLIENT") {
+    return NextResponse.json({ ready: false });
+  }
+  return NextResponse.json({ ready: await allowedFor(session.sub) });
 }
 
 export async function POST(req: NextRequest) {
@@ -69,10 +84,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Заказ уже оплачен" }, { status: 409 });
   }
 
-  if (!(await kaspiReady())) {
+  if (!(await allowedFor(session.sub))) {
     return NextResponse.json(
-      { error: "Оплата через Kaspi сейчас недоступна" },
-      { status: 503 }
+      { error: "Оплата через Kaspi для вас недоступна" },
+      { status: 403 }
     );
   }
 

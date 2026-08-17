@@ -46,6 +46,8 @@ type ClientRow = {
   comment: string | null;
   createdAt: string;
   isActive: boolean;
+  // Разрешена ли клиенту онлайн-оплата Kaspi Pay (по умолчанию нет).
+  kaspiPayEnabled?: boolean;
   // Кто выключил аккаунт: блокировку владельца (ADMIN/RA) менеджер не снимает.
   blockedByRole?: string | null;
   managerId: string | null;
@@ -749,6 +751,15 @@ export default function ClientsManager({
     return u.blockedByRole === "ADMIN" || u.blockedByRole === "RA";
   }
 
+  // Бухгалтер видит раздел, но ничего не правит — сервер ему всё равно
+  // ответит отказом, поэтому галочка у него неактивна.
+  const canEditClients = viewerRole !== "ACCOUNTANT";
+
+  async function toggleKaspiPay(client: ClientRow, next: boolean) {
+    if (!canEditClients) return;
+    patch(client.id, { kaspiPayEnabled: next });
+  }
+
   async function toggleActive(client: ClientRow) {
     if (lockedByOwner(client)) return;
     const next = !client.isActive;
@@ -966,13 +977,16 @@ export default function ClientsManager({
               <th className="w-28">Скидка</th>
               <th className="w-36">Баланс</th>
               <th className="w-52">Склады / детали</th>
+              {/* Кому разрешена онлайн-оплата Kaspi: по умолчанию никому,
+                  такие клиенты платят через менеджера, как раньше. */}
+              <th className="w-24 text-center">Kaspi</th>
               <th className="w-24 text-center">Статус</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-12 text-center text-sm text-muted">
+                <td colSpan={8} className="py-12 text-center text-sm text-muted">
                   {clients.length === 0
                     ? "Клиентов пока нет."
                     : "Под фильтры никто не подошёл."}
@@ -1052,6 +1066,32 @@ export default function ClientsManager({
                       />
                     </button>
                   </td>
+                  {/* Разрешение на оплату Kaspi: галочка. Пусто = клиент
+                      платит через менеджера, как было до интеграции. */}
+                  <td className="text-center">
+                    <label
+                      title={
+                        canEditClients
+                          ? "Разрешить клиенту оплачивать заказы через Kaspi"
+                          : "Права на изменение есть у менеджера клиента и владельца"
+                      }
+                      className={cx(
+                        "inline-flex items-center gap-1.5 text-[11px]",
+                        canEditClients ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(c.kaspiPayEnabled)}
+                        disabled={!canEditClients}
+                        onChange={(e) => toggleKaspiPay(c, e.target.checked)}
+                        className="h-4 w-4 accent-[#F14635]"
+                      />
+                      <span className={c.kaspiPayEnabled ? "text-ink" : "text-muted"}>
+                        {c.kaspiPayEnabled ? "Kaspi" : "через менеджера"}
+                      </span>
+                    </label>
+                  </td>
                   <td className="text-center">
                     {(() => {
                       // Блокировку владельца менеджер не снимает — кнопка
@@ -1093,7 +1133,7 @@ export default function ClientsManager({
                 </tr>
                 {expanded === c.id && (
                   <tr>
-                    <td colSpan={7} className="bg-gray-50 p-4">
+                    <td colSpan={8} className="bg-gray-50 p-4">
                       <div className="grid gap-6 lg:grid-cols-2">
                         <AccessEditor
                           warehouses={warehouses}

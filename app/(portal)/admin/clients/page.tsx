@@ -67,6 +67,7 @@ export default async function AdminClientsPage() {
     comment: c.comment,
     createdAt: c.createdAt.toISOString(),
     isActive: c.isActive,
+    kaspiPayEnabled: c.kaspiPayEnabled,
     blockedByRole: c.blockedByRole,
     managerId: c.managerId,
     access: c.warehouseAccess.map((a) => a.warehouseId),

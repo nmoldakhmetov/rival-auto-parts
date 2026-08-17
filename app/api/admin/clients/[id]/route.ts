@@ -12,6 +12,8 @@ export async function PATCH(
   let body: {
     managerId?: string | null;
     isActive?: boolean;
+    // Разрешение на онлайн-оплату Kaspi Pay (галочка в «Клиентах»).
+    kaspiPayEnabled?: boolean;
     city?: string;
     comment?: string;
     // Профиль: правится и для клиентов, и для сотрудников.
@@ -31,6 +33,11 @@ export async function PATCH(
   const data: Prisma.UserUncheckedUpdateInput = {};
   if ("managerId" in body) data.managerId = body.managerId || null;
   if ("isActive" in body) data.isActive = Boolean(body.isActive);
+  // Кому разрешена оплата Kaspi. Ставит любой сотрудник, который и так
+  // правит карточку клиента: менеджер — своим, ADMIN/RA — всем.
+  if ("kaspiPayEnabled" in body) {
+    data.kaspiPayEnabled = Boolean(body.kaspiPayEnabled);
+  }
   // Баланс вручную НЕ правится: он считается по формуле из заказов
   // (lib/balance.ts), и ручная правка всё равно затёрлась бы при первом же
   // изменении заказа. Двигать долг можно только полем «оплачено» в «Заказах».
